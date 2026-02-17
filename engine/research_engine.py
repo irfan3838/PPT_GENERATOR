@@ -9,10 +9,12 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
 
-from config import Settings, get_settings
+from config import CURRENT_DATE_STR, CURRENT_YEAR, Settings, get_settings
 from engine.llm_provider import LLMProvider
 from engine.pipeline_logger import PipelineLogger
 from models import ResearchFinding
+
+_DATA_RANGE = f"{CURRENT_YEAR - 2}-{CURRENT_YEAR}"
 
 
 class GroundedResearchEngine:
@@ -38,8 +40,11 @@ class GroundedResearchEngine:
             A ResearchFinding with content and source URLs.
         """
         system_instruction = (
-            "You are a financial research analyst. Provide factual, data-driven "
-            "answers with specific numbers, dates, and statistics. "
+            f"You are a financial research analyst. Today's date is {CURRENT_DATE_STR} "
+            f"(year {CURRENT_YEAR}). When the user asks for 'last 2 years' data, "
+            f"they mean {CURRENT_YEAR - 2} to {CURRENT_YEAR}. 'Recent' means "
+            f"{CURRENT_YEAR - 1}-{CURRENT_YEAR}. Always target data from {_DATA_RANGE}. "
+            "Provide factual, data-driven answers with specific numbers, dates, and statistics. "
             "Always cite your sources. Be precise and concise."
         )
         if context:

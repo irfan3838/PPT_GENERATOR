@@ -3,11 +3,17 @@ config.py — Central configuration for PPT Builder v1.
 Loads settings from environment variables / .env file.
 """
 
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
 from pydantic import Field
+
+# ── Date Awareness ────────────────────────────────────────────
+# Computed once at import time so all agents share the same date context.
+CURRENT_DATE_STR = date.today().strftime("%B %d, %Y")   # e.g. "February 17, 2026"
+CURRENT_YEAR = date.today().year
 
 
 # ── Project Paths ──────────────────────────────────────────────

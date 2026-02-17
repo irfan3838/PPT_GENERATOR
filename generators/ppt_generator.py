@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 
 from agents.slide_content_agent import SlideContent
 from config import OUTPUT_DIR, get_settings
@@ -285,6 +285,7 @@ class InteractivePPTGenerator:
             )
             tf = txBox.text_frame
             tf.word_wrap = True
+            tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
 
             for i, bullet in enumerate(content.content_bullets):
                 p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
@@ -362,29 +363,52 @@ class InteractivePPTGenerator:
         self._add_slide_header(slide, content.title, plan.id)
 
         # Left panel — bullets with triangle markers (constrained to left of divider)
+        # Use wider text box starting closer to left edge, with auto-shrink to prevent clipping
+        left_panel_left = 0.5   # closer to left edge (after the 0.15" accent bar)
+        left_panel_width = 5.7  # generous width, stops before the divider at 6.5"
         txBox = slide.shapes.add_textbox(
-            Inches(CONTENT_LEFT), Inches(CONTENT_TOP),
-            Inches(SPLIT_LEFT_WIDTH - 0.3), Inches(CONTENT_HEIGHT),
+            Inches(left_panel_left), Inches(CONTENT_TOP),
+            Inches(left_panel_width), Inches(CONTENT_HEIGHT),
         )
         tf = txBox.text_frame
         tf.word_wrap = True
+        tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+
+        # Dynamically pick font size based on total bullet text length
+        total_text = sum(len(b) for b in content.content_bullets)
+        num_bullets = len(content.content_bullets)
+        if total_text > 400 or num_bullets > 5:
+            body_font_size = Pt(11)
+            bullet_font_size = Pt(8)
+            space_before = Pt(6)
+            space_after = Pt(3)
+        elif total_text > 250 or num_bullets > 4:
+            body_font_size = Pt(12)
+            bullet_font_size = Pt(9)
+            space_before = Pt(7)
+            space_after = Pt(3)
+        else:
+            body_font_size = Pt(14)
+            bullet_font_size = Pt(10)
+            space_before = Pt(8)
+            space_after = Pt(4)
 
         for i, bullet in enumerate(content.content_bullets):
             p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
 
             bullet_run = p.add_run()
             bullet_run.text = "\u25b8  "
-            bullet_run.font.size = Pt(10)
+            bullet_run.font.size = bullet_font_size
             bullet_run.font.color.rgb = t.accent
 
             text_run = p.add_run()
             text_run.text = bullet
-            text_run.font.size = Pt(14)
+            text_run.font.size = body_font_size
             text_run.font.color.rgb = t.text_dark
             text_run.font.name = t.body_font
 
-            p.space_before = Pt(8)
-            p.space_after = Pt(4)
+            p.space_before = space_before
+            p.space_after = space_after
             p.level = 0
 
         # Vertical divider line

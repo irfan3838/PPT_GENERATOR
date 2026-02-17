@@ -2,8 +2,12 @@
 prompts/content_prompts.py — Prompt templates for SlideContentAgent.
 """
 
+from config import CURRENT_DATE_STR, CURRENT_YEAR
+
 # ── Slide Content Generation ────────────────────────────────
 SLIDE_CONTENT_PROMPT = """You are a presentation content writer specializing in financial decks. Generate the final content for a single slide.
+
+**Current Date:** """ + CURRENT_DATE_STR + """
 
 **Slide Plan:**
 - Title: {slide_title}
@@ -86,6 +90,8 @@ LAYOUT_DECISION_PROMPT = """You are a presentation design consultant. Given the 
 
 # ── Text-Heavy Infographic ────────────────────────────────
 TEXT_HEAVY_INFOGRAPHIC_PROMPT = """You are a presentation content writer specializing in infographic design. Generate content for a text-heavy infographic slide.
+
+**Current Date:** """ + CURRENT_DATE_STR + """
 
 **Slide Plan:**
 - Title: {slide_title}

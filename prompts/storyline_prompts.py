@@ -2,8 +2,12 @@
 prompts/storyline_prompts.py — Prompt templates for Framework Selection & Storyline agents.
 """
 
+from config import CURRENT_DATE_STR, CURRENT_YEAR
+
 # ── Framework Selection ─────────────────────────────────────
 FRAMEWORK_SELECTION_PROMPT = """You are a presentation strategy expert. Analyze the topic and research context below, then select the **Top 2** most effective presentation frameworks from the library.
+
+**Current Date:** """ + CURRENT_DATE_STR + """
 
 **Topic:** {topic}
 **Research Summary:** {research_summary}
@@ -39,6 +43,9 @@ FRAMEWORK_SELECTION_PROMPT = """You are a presentation strategy expert. Analyze 
 
 # ── Storyline Generation ────────────────────────────────────
 STORYLINE_GENERATION_PROMPT = """You are a presentation architect. Create a detailed slide-by-slide outline for a professional financial presentation.
+
+**Current Date:** """ + CURRENT_DATE_STR + """
+**Important:** We are in the year """ + str(CURRENT_YEAR) + """. "Last 2 years" means """ + str(CURRENT_YEAR - 2) + """ to """ + str(CURRENT_YEAR) + """. "Recent" means """ + str(CURRENT_YEAR - 1) + """-""" + str(CURRENT_YEAR) + """.
 
 **Topic:** {topic}
 **Framework:** {framework_name} — {framework_description}
@@ -89,6 +96,9 @@ You MUST include ALL of these special slides:
 
 # ── Comparative Outline ─────────────────────────────────────
 COMPARATIVE_STORYLINE_PROMPT = """You are generating **two** side-by-side presentation outlines for the user to choose from.
+
+**Current Date:** """ + CURRENT_DATE_STR + """
+**Important:** We are in the year """ + str(CURRENT_YEAR) + """. "Last 2 years" means """ + str(CURRENT_YEAR - 2) + """ to """ + str(CURRENT_YEAR) + """. "Recent" means """ + str(CURRENT_YEAR - 1) + """-""" + str(CURRENT_YEAR) + """.
 
 **Topic:** {topic}
 **Research Summary:** {research_summary}
