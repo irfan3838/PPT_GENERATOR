@@ -1,0 +1,1 @@
+# generators/ - Output generation modules
