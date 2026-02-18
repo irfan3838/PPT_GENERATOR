@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-validate:
+    name: Lint & validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install linter
+        run: pip install ruff
+
+      - name: Lint with ruff
+        run: ruff check . --output-format=github
+
+      - name: Install application dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate core imports
+        run: |
+          python -c "
+          import config
+          import models
+          import orchestrator
+          print('All core modules import successfully')
+          "
+
+      - name: Validate agent imports
+        run: |
+          python -c "
+          from agents.research_agent import ResearchAgent
+          from agents.storyline_agent import StorylineAgent
+          from agents.slide_content_agent import SlideContentAgent
+          from agents.critic_agent import CriticAgent
+          print('All agent modules import successfully')
+          "
+
+      - name: Validate generator imports
+        run: |
+          python -c "
+          from generators.ppt_generator import InteractivePPTGenerator
+          from generators.themes import get_theme
+          print('All generator modules import successfully')
+          "

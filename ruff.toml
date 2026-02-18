@@ -1,0 +1,20 @@
+# Ruff linter config — used by GitHub Actions CI
+target-version = "py311"
+
+[lint]
+# Only enforce import sorting and basic error rules in CI
+# Expand as code quality improves
+select = ["E", "F", "I"]
+ignore = [
+    "E501",  # line too long — handled separately
+    "F401",  # unused imports — some are intentional re-exports
+    "E711",  # comparison to None — style preference
+    "E712",  # comparison to True/False — style preference
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports are intentional
+
+[format]
+quote-style = "double"
+indent-style = "space"

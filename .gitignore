@@ -156,3 +156,14 @@ demo_ppts/demo_status.json
 *.swp
 *.swo
 *~
+
+# Terraform — secrets and generated state
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+*.tfvars
+
+# Data directories
+data/
