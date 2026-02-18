@@ -15,6 +15,7 @@ SLIDE_CONTENT_PROMPT = """You are a presentation content writer specializing in 
 - Visual Type: {visual_type}
 - Key Insight: {key_insight}
 - Content Direction: {content_bullets}
+- Visual Theme: {theme_description}
 
 **Research Data:**
 {research_data}
@@ -24,6 +25,7 @@ SLIDE_CONTENT_PROMPT = """You are a presentation content writer specializing in 
 - Bullets must be concise (max 15 words each), max 5 bullets.
 - NEVER repeat the same word or phrase in a bullet or title (e.g., "SIP & SIP" is WRONG).
 - Each bullet must convey a UNIQUE, distinct point — no redundancy.
+- DO NOT include placeholders like "[Visual]" or "[Chart]" or "[Image]" in the content bullets.
 - If visual_type is a chart, you MUST provide exact data in chart_data.
 - If visual_type is a table, you MUST provide structured table data.
 - Include a speaker note with the full narrative context.

@@ -72,15 +72,14 @@ class SlideContentAgent:
         self,
         slide: SlidePlan,
         research_data: str,
+        theme_description: str = "",
     ) -> SlideContent:
         """Generate final content for a single slide.
 
         Args:
             slide: The SlidePlan blueprint.
             research_data: Research findings relevant to this slide.
-
-        Returns:
-            SlideContent with finalized text, chart data, and/or table data.
+            theme_description: Description of the visual theme to guide tone.
         """
         self._log.action("Generate Slide Content", f"slide={slide.id}: {slide.title}")
 
@@ -92,17 +91,21 @@ class SlideContentAgent:
                 key_insight=slide.key_insight,
                 content_bullets="; ".join(slide.content_bullets),
                 research_data=research_data[:4000],
+                theme_description=theme_description,
+            )
+            # Add instruction to incorporate theme
+            system_instruction = (
+                "You are a professional presentation content writer specializing in infographics. "
+                "Generate content optimized for visual infographic representation. "
+                f"The presentation theme is '{theme_description}' — reflect this style in the content tone. "
+                "Include a detailed infographic_prompt for image generation. "
+                "Respond with valid JSON."
             )
             llm_result = self._llm.generate_structured(
                 prompt=prompt,
                 response_model=_InfographicSlideContentLLM,
                 model=self._settings.gemini_pro_model,
-                system_instruction=(
-                    "You are a professional presentation content writer specializing in infographics. "
-                    "Generate content optimized for visual infographic representation. "
-                    "Include a detailed infographic_prompt for image generation. "
-                    "Respond with valid JSON."
-                ),
+                system_instruction=system_instruction,
             )
         else:
             prompt = SLIDE_CONTENT_PROMPT.format(
@@ -112,21 +115,31 @@ class SlideContentAgent:
                 key_insight=slide.key_insight,
                 content_bullets="; ".join(slide.content_bullets),
                 research_data=research_data[:4000],
+                theme_description=theme_description,
+            )
+            # Add instruction to incorporate theme
+            system_instruction = (
+                "You are a professional presentation content writer. "
+                "Generate precise, data-backed slide content. "
+                f"The presentation theme is '{theme_description}' — keep this tone in mind. "
+                "If the slide requires a chart or table, provide exact structured data. "
+                "Include chart annotations for significant data points when relevant. "
+                "Respond with valid JSON."
             )
             llm_result = self._llm.generate_structured(
                 prompt=prompt,
                 response_model=_SlideContentLLM,
                 model=self._settings.gemini_pro_model,
-                system_instruction=(
-                    "You are a professional presentation content writer. "
-                    "Generate precise, data-backed slide content. "
-                    "If the slide requires a chart or table, provide exact structured data. "
-                    "Include chart annotations for significant data points when relevant. "
-                    "Respond with valid JSON."
-                ),
+                system_instruction=system_instruction,
             )
 
         content = SlideContent(**llm_result.model_dump())
+
+        if content.content_bullets:
+            content.content_bullets = [
+                b for b in content.content_bullets
+                if not b.strip().lower().startswith(("[visual]", "[image]", "[chart]"))
+            ]
 
         self._log.info(
             f"Content for slide {slide.id}: "
@@ -140,6 +153,7 @@ class SlideContentAgent:
         self,
         slides: List[SlidePlan],
         research_map: Dict[int, str],
+        theme_description: str = "Corporate Blue",
         max_workers: int = 3,
     ) -> List[SlideContent]:
         """Generate content for all slides concurrently.
@@ -147,6 +161,7 @@ class SlideContentAgent:
         Args:
             slides: List of SlidePlan objects.
             research_map: Dict mapping slide.id → research data string.
+            theme_description: Description of the visual theme to guide tone.
             max_workers: Max concurrent generation threads.
 
         Returns:
@@ -154,12 +169,12 @@ class SlideContentAgent:
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        self._log.action("Generate All Content", f"{len(slides)} slides")
+        self._log.action("Generate All Content", f"{len(slides)} slides (Theme: {theme_description})")
         contents: List[Optional[SlideContent]] = [None] * len(slides)
 
         def _generate_one(idx: int, slide: SlidePlan) -> tuple:
             research_data = research_map.get(slide.id, "")
-            content = self.generate_content(slide, research_data)
+            content = self.generate_content(slide, research_data, theme_description)
             return idx, content
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:

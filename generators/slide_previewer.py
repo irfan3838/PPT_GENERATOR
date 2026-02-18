@@ -7,6 +7,7 @@ Now theme-aware with consultant-quality visuals matching ppt_generator.py.
 from __future__ import annotations
 
 import io
+import textwrap
 from typing import List, Optional
 
 import matplotlib
@@ -267,7 +268,7 @@ class SlidePreviewRenderer:
         else:
             y_start = 1.8
             for i, bullet in enumerate(content.content_bullets[:6]):
-                display = bullet if len(bullet) < 80 else bullet[:77] + "..."
+                display = textwrap.fill(bullet, width=60)
                 # Accent-colored bullet character
                 ax.text(
                     1.0, y_start + i * 0.65,
@@ -424,15 +425,15 @@ class SlidePreviewRenderer:
         # Left panel — bullets with triangle markers
         y_start = 2.0
         for i, bullet in enumerate(content.content_bullets[:5]):
-            display = bullet if len(bullet) < 35 else bullet[:32] + "..."
+            display = textwrap.fill(bullet, width=50)
             ax.text(
-                1.0, y_start + i * 0.55,
+                1.0, y_start + i * 0.75,
                 "\u25b8",
                 fontsize=8, color=t.mpl_accent,
                 ha="left", va="top",
             )
             ax.text(
-                1.3, y_start + i * 0.55,
+                1.3, y_start + i * 0.75,
                 display,
                 fontsize=9, color=t.mpl_text_dark, ha="left", va="top",
                 fontfamily=t.body_font,
@@ -523,15 +524,15 @@ class SlidePreviewRenderer:
 
         y_start = 4.2
         for i, finding in enumerate(findings[:4]):
-            display = finding if len(finding) < 80 else finding[:77] + "..."
+            display = textwrap.fill(finding, width=100)
             ax.text(
-                1.0, y_start + i * 0.5,
+                1.0, y_start + i * 0.65,
                 "\u25cf",
                 fontsize=6, color=t.mpl_accent,
                 ha="left", va="top",
             )
             ax.text(
-                1.4, y_start + i * 0.5,
+                1.4, y_start + i * 0.65,
                 display,
                 fontsize=10, color=t.mpl_text_dark, ha="left", va="top",
                 fontfamily=t.body_font,

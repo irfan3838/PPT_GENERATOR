@@ -43,7 +43,7 @@ IMAGE_SLIDE_PROMPT_TEMPLATE = """Generate a SINGLE professional business present
 
 Title: {slide_title}
 
-Key Points (include ALL of these on the slide):
+Key Points (include AT MOST 5 of these on the slide - be concise):
 {content_bullets}
 
 Key Insight / Takeaway: {key_insight}
@@ -134,6 +134,7 @@ THIS IS THE #1 PRIORITY — data integrity is non-negotiable:
   and tables in this image must appear EXACTLY as shown — same bars, same values,
   same axes, same labels, same legend entries, same annotation text.
   If it has data, LEAVE THE DATA ALONE.
+  DO NOT TRUNCATE TEXT. If text is long, make font smaller but show FULL text. Never use "..." or summarize.
 
 ═══════════════════════════════════════════
  WHAT TO REFINE (visual polish only)
@@ -171,4 +172,3 @@ OUTPUT:
   The refined slide must be immediately usable in a professional business presentation.
   ALL charts, graphs, and tables must be IDENTICAL to the input — only the surrounding design is polished.
 """
-

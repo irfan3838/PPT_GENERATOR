@@ -1,0 +1,105 @@
+{
+    "demo_ppts": [
+        {
+            "id": "general_industry_trends",
+            "title": "General Industry Trends — 2026 Outlook",
+            "topic": "General Industry Trends in Finance and Mutual Funds in India: A comprehensive overview of the current landscape, growth drivers, regulatory changes, and key developments shaping the financial services industry as of 2026",
+            "subtopics": [
+                "Mutual Fund Industry AUM Growth Trajectory",
+                "SIP Contribution Trends and Retail Investor Behavior",
+                "Regulatory Updates from SEBI and AMFI",
+                "Digital Transformation in Financial Services",
+                "Market Performance and Index Milestones",
+                "New Fund Categories and Product Innovation"
+            ],
+            "audience": "business executives",
+            "num_subtopics": 6,
+            "target_slides": 7,
+            "description": "A comprehensive overview of the Indian finance and mutual fund industry as it stands today — covering AUM growth, SIP trends, SEBI regulations, digital disruption, and market milestones.",
+            "icon": "🌐",
+            "color_accent": "#4A90D9"
+        },
+        {
+            "id": "industry_trends",
+            "title": "Industry Trends — Where Finance is Headed",
+            "topic": "Emerging Industry Trends in Indian Financial Services: Fintech disruption, passive investing revolution, ESG integration, embedded finance, and the future of wealth management in India",
+            "subtopics": [
+                "Fintech and UPI Disruption in Financial Services",
+                "Rise of Passive Investing (Index Funds & ETFs)",
+                "ESG and Sustainable Investing Trends",
+                "Embedded Finance and Banking-as-a-Service",
+                "Future of Wealth Management and Robo-Advisory",
+                "AI and Machine Learning in Financial Decision-Making"
+            ],
+            "audience": "business executives",
+            "num_subtopics": 6,
+            "target_slides": 7,
+            "description": "Deep dive into what's changing in the financial services space — from fintech disruption and passive investing to ESG adoption and AI-powered wealth management.",
+            "icon": "📈",
+            "color_accent": "#8E44AD"
+        },
+        {
+            "id": "mfd_pfp_business_trends",
+            "title": "MFD (PFPs) Business Trends",
+            "topic": "Mutual Fund Distributor and Personal Finance Professional Business Trends: Commission structures, digital distribution, client acquisition strategies, compliance requirements, and growth opportunities for MFDs and PFPs in India",
+            "subtopics": [
+                "MFD Commission Structures and Revenue Models",
+                "Digital Distribution and Online Advisory Platforms",
+                "Client Acquisition and Retention Strategies for MFDs",
+                "AMFI and SEBI Compliance Requirements for Distributors",
+                "Technology Adoption by MFDs (CRM, Portfolio Tracking)",
+                "Growth Opportunities in Tier-2 and Tier-3 Cities"
+            ],
+            "audience": "business executives",
+            "num_subtopics": 6,
+            "target_slides": 7,
+            "description": "Everything a Mutual Fund Distributor needs to know — from evolving commission models and digital tools to client strategies and regulatory compliance in the PFP space.",
+            "icon": "💼",
+            "color_accent": "#E67E22"
+        },
+        {
+            "id": "client_database_management",
+            "title": "Client Database Management",
+            "topic": "Client Database Management for Financial Advisors: CRM best practices, data hygiene, client segmentation, lifecycle management, regulatory data requirements, and leveraging analytics for personalized advisory in India",
+            "subtopics": [
+                "CRM Best Practices for Financial Advisors",
+                "Client Segmentation and Tiered Service Models",
+                "Data Hygiene and KYC Compliance",
+                "Client Lifecycle Management and Retention",
+                "Analytics-Driven Personalized Advisory",
+                "Technology Tools for Client Database Management"
+            ],
+            "audience": "business executives",
+            "num_subtopics": 6,
+            "target_slides": 7,
+            "description": "A strategic guide to managing client databases effectively — including CRM best practices, segmentation strategies, KYC compliance, and data-driven advisory approaches.",
+            "icon": "🗄️",
+            "color_accent": "#27AE60"
+        },
+        {
+            "id": "aum_growth_trends",
+            "title": "AUM Growth Trends",
+            "topic": "Assets Under Management (AUM) Growth Trends in India: Historical trajectory, category-wise breakdown, SIP contributions impact, institutional vs retail participation, AMC market share dynamics, and future growth projections",
+            "subtopics": [
+                "Historical AUM Growth Trajectory (5-Year Overview)",
+                "Category-wise AUM Breakdown (Equity, Debt, Hybrid, etc.)",
+                "Impact of SIP Contributions on AUM Growth",
+                "Institutional vs Retail Participation Trends",
+                "Top AMCs by Market Share and AUM Rankings",
+                "AUM Growth Projections and Future Outlook"
+            ],
+            "audience": "investors",
+            "num_subtopics": 6,
+            "target_slides": 7,
+            "description": "An in-depth analysis of AUM growth in India's mutual fund industry — covering historical trends, category breakdowns, SIP impact, AMC rankings, and future projections.",
+            "icon": "📊",
+            "color_accent": "#E74C3C"
+        }
+    ],
+    "generation_schedule": {
+        "frequency": "weekly",
+        "day_of_week": "sunday",
+        "last_generated": null,
+        "auto_regenerate": true
+    }
+}

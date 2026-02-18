@@ -146,6 +146,10 @@ Thumbs.db
 *.pptx
 *.png
 
+# Demo PPT generated files
+demo_ppts/output/
+demo_ppts/demo_status.json
+
 # Editor directories and files
 .idea/
 .vscode/

@@ -10,7 +10,7 @@ Falls back gracefully when generation fails or is unavailable.
 from __future__ import annotations
 
 import io
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from google import genai
 from google.genai import types
@@ -20,6 +20,9 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+if TYPE_CHECKING:
+    from generators.themes import PresentationTheme
 
 from config import Settings, get_settings
 from engine.pipeline_logger import PipelineLogger
@@ -73,7 +76,9 @@ class NanoBananaProIntegration:
             ),
         )
         for part in response.candidates[0].content.parts:
-            if hasattr(part, "inline_data") and part.inline_data.mime_type.startswith("image/"):
+            if hasattr(part, "inline_data") and part.inline_data.mime_type.startswith(
+                "image/"
+            ):
                 return part.inline_data.data
         return None
 
@@ -83,7 +88,9 @@ class NanoBananaProIntegration:
         wait=wait_exponential(multiplier=2, min=2, max=15),
         reraise=True,
     )
-    def _call_gemini_image_refine(self, image_bytes: bytes, prompt: str) -> Optional[bytes]:
+    def _call_gemini_image_refine(
+        self, image_bytes: bytes, prompt: str
+    ) -> Optional[bytes]:
         """Call the Gemini image API with an input image (image-to-image refinement)."""
         image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
         response = self._client.models.generate_content(
@@ -94,7 +101,9 @@ class NanoBananaProIntegration:
             ),
         )
         for part in response.candidates[0].content.parts:
-            if hasattr(part, "inline_data") and part.inline_data.mime_type.startswith("image/"):
+            if hasattr(part, "inline_data") and part.inline_data.mime_type.startswith(
+                "image/"
+            ):
                 return part.inline_data.data
         return None
 
@@ -106,6 +115,7 @@ class NanoBananaProIntegration:
         width: int = 1920,
         height: int = 1080,
         placement: str = "full-slide",
+        theme: Optional["PresentationTheme"] = None,
     ) -> Optional[io.BytesIO]:
         """Generate an infographic image from a text prompt.
 
@@ -129,9 +139,20 @@ class NanoBananaProIntegration:
         }
         dimension_hint = dimension_map.get(placement, "16:9 widescreen landscape")
 
+        theme_hint = ""
+        if theme:
+            theme_hint = (
+                f"COLOR THEME: Use primary color {theme.primary_hex}, "
+                f"accent color {theme.accent_hex}, "
+                f"background color {theme.bg_white_hex}, "
+                f"text color {theme.text_dark_hex}. "
+                f"Apply these exact colors throughout the design. "
+            )
+
         if placement == "full-slide":
             enhanced_prompt = (
                 f"{prompt}\n\n"
+                f"{theme_hint}"
                 f"Output format: {dimension_hint}, high-resolution, presentation-ready."
             )
         else:
@@ -140,6 +161,7 @@ class NanoBananaProIntegration:
                 f"Clean, modern flat design. Eye-catching visual layout with icons, "
                 f"color blocks, geometric shapes, and clear visual hierarchy. "
                 f"Whitespace-rich, high contrast, suitable for projection. "
+                f"{theme_hint}"
                 f"{prompt}"
                 f" Create in {dimension_hint} format."
             )
@@ -156,9 +178,7 @@ class NanoBananaProIntegration:
                 return None
             buf = io.BytesIO(image_bytes)
             buf.seek(0)
-            self._log.info(
-                f"Infographic generated: {len(image_bytes) / 1024:.1f} KB"
-            )
+            self._log.info(f"Infographic generated: {len(image_bytes) / 1024:.1f} KB")
             return buf
         except Exception as e:
             self._log.warning(f"Gemini image generation failed: {e}")
@@ -190,15 +210,15 @@ class NanoBananaProIntegration:
         self._log.action("Refine Slide", f"input={len(slide_image) / 1024:.0f} KB")
 
         try:
-            refined_bytes = self._call_gemini_image_refine(slide_image, refinement_prompt)
+            refined_bytes = self._call_gemini_image_refine(
+                slide_image, refinement_prompt
+            )
             if refined_bytes is None:
                 self._log.warning("Gemini refinement returned no image part")
                 return None
             buf = io.BytesIO(refined_bytes)
             buf.seek(0)
-            self._log.info(
-                f"Slide refined: {len(refined_bytes) / 1024:.1f} KB"
-            )
+            self._log.info(f"Slide refined: {len(refined_bytes) / 1024:.1f} KB")
             return buf
         except Exception as e:
             self._log.warning(f"Gemini slide refinement failed: {e}")

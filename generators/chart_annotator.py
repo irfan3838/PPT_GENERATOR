@@ -218,7 +218,7 @@ class ChartAnnotator:
             return fig
         values = dataset.data
         colors = self._get_colors()
-        color = dataset.color or colors[0]
+        color = colors[0]
 
         bars = ax.bar(data.labels, values, color=color, width=0.6,
                       edgecolor="white", zorder=3)
@@ -253,7 +253,8 @@ class ChartAnnotator:
 
         for i, dataset in enumerate(data.datasets):
             values = dataset.data
-            color = dataset.color or colors[i % len(colors)]
+            # Force theme color cyclic palette, ignoring dataset.color which might be hardcoded blue from LLM
+            color = colors[i % len(colors)]
             label = dataset.label or f"Series {i + 1}"
             offset = (i - n_series / 2 + 0.5) * bar_width
             ax.bar(x + offset, values, bar_width, label=label,
@@ -280,7 +281,7 @@ class ChartAnnotator:
 
         for i, dataset in enumerate(data.datasets):
             values = dataset.data
-            color = dataset.color or colors[i % len(colors)]
+            color = colors[i % len(colors)]
             label = dataset.label or f"Series {i + 1}"
             ax.bar(x, values, 0.6, label=label, color=color,
                    bottom=bottom, edgecolor="white")
@@ -302,7 +303,7 @@ class ChartAnnotator:
 
         for i, dataset in enumerate(data.datasets):
             values = dataset.data
-            color = dataset.color or colors[i % len(colors)]
+            color = colors[i % len(colors)]
             label = dataset.label or f"Series {i + 1}"
             ax.plot(data.labels, values, marker="o", color=color,
                     label=label, linewidth=2, markersize=6)
@@ -338,7 +339,7 @@ class ChartAnnotator:
             return fig
         values = dataset.data
         pie_colors = [
-            ds.color or colors[i % len(colors)]
+            colors[i % len(colors)]
             for i, ds in enumerate(data.datasets)
         ] if len(data.datasets) == len(data.labels) else [
             colors[i % len(colors)] for i in range(len(values))

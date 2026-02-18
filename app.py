@@ -6,12 +6,16 @@ Provides a human-in-the-loop approval workflow for presentation generation.
 from __future__ import annotations
 
 import json
+import os
 import random
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
 import streamlit as st
+import streamlit.components.v1 as components
 
+from agents.slide_content_agent import SlideContent
 from config import get_settings, OUTPUT_DIR
 from models import PipelineState, StorylineOutline
 from orchestrator import PipelineOrchestrator
@@ -99,7 +103,8 @@ st.set_page_config(
 )
 
 # ── Custom CSS ──────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* ── Global ── */
     .stApp {
@@ -504,8 +509,134 @@ st.markdown("""
         margin-right: auto;
     }
     .fact-box strong { color: #4A90D9; }
+    /* ── Demo PPT Cards ── */
+    .demo-section-title {
+        font-size: 1.4rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #4A90D9 0%, #A8D8FF 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.25rem;
+    }
+    .demo-section-subtitle {
+        font-size: 0.9rem;
+        color: #5A7A9A;
+        margin-bottom: 1.5rem;
+    }
+    .demo-card {
+        padding: 1.4rem 1.3rem;
+        border-radius: 14px;
+        background: rgba(22,34,54,0.65);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(74,144,217,0.12);
+        transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: default;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+    .demo-card::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        border-radius: 14px 14px 0 0;
+        transition: height 0.3s;
+    }
+    .demo-card:hover {
+        border-color: rgba(74,144,217,0.35);
+        box-shadow: 0 8px 32px rgba(74,144,217,0.12);
+        transform: translateY(-3px);
+    }
+    .demo-card:hover::before {
+        height: 4px;
+    }
+    .demo-card-icon {
+        font-size: 1.6rem;
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+    .demo-card-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #C8D6E5;
+        margin-bottom: 0.35rem;
+        line-height: 1.3;
+    }
+    .demo-card-desc {
+        font-size: 0.78rem;
+        color: #7B9DBF;
+        line-height: 1.5;
+        margin-bottom: 0.75rem;
+    }
+    .demo-card-meta {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 0.6rem;
+    }
+    .demo-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 10px;
+        border-radius: 14px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        background: rgba(74,144,217,0.1);
+        color: #67B8F0;
+        border: 1px solid rgba(74,144,217,0.15);
+    }
+    .demo-prompt-toggle {
+        font-size: 0.72rem;
+        color: #4A90D9;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        margin-top: 0.3rem;
+        display: inline-block;
+    }
+    .demo-updated {
+        font-size: 0.68rem;
+        color: #3D6A8F;
+        margin-top: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .demo-refresh-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background: rgba(39,174,96,0.1);
+        color: #27AE60;
+        border: 1px solid rgba(39,174,96,0.2);
+    }
+
+    /* ── Mini Game Container ── */
+    .minigame-wrapper {
+        border-radius: 14px;
+        background: rgba(15,27,45,0.6);
+        border: 1px solid rgba(74,144,217,0.15);
+        padding: 1rem;
+        height: 100%;
+    }
+    .minigame-title {
+        font-size: 0.85rem;
+        font-weight: 700;
+        color: #67B8F0;
+        margin-bottom: 0.5rem;
+        text-align: center;
+    }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # ── Progress Bar Helper ────────────────────────────────────
@@ -514,12 +645,13 @@ PIPELINE_STEPS = [
     ("researching", "Research"),
     ("framework_selection", "Frameworks"),
     ("storyline_approval", "Storyline"),
+    ("theme_selection", "Theme"),
     ("generating", "Generate"),
-    ("layout_selection", "Theme"),
     ("review", "Review"),
     ("finalizing", "Build"),
     ("done", "Done"),
 ]
+
 
 def render_progress_bar(current_phase: str) -> None:
     """Render a visual pipeline progress bar."""
@@ -586,6 +718,7 @@ def init_session_state() -> None:
 def get_orchestrator() -> PipelineOrchestrator:
     """Get or create the pipeline orchestrator."""
     if st.session_state.orchestrator is None:
+
         def on_status(status: str, step: str) -> None:
             st.session_state.status_log.append(f"[{status}] {step}")
 
@@ -601,8 +734,8 @@ def render_sidebar() -> Dict[str, Any]:
     with st.sidebar:
         st.markdown(
             '<p style="font-size:1.3rem;font-weight:800;'
-            'background:linear-gradient(135deg,#4A90D9,#67B8F0);'
-            '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
+            "background:linear-gradient(135deg,#4A90D9,#67B8F0);"
+            "-webkit-background-clip:text;-webkit-text-fill-color:transparent;"
             'background-clip:text;margin-bottom:0.25rem;">PPT Builder</p>',
             unsafe_allow_html=True,
         )
@@ -624,7 +757,13 @@ def render_sidebar() -> Dict[str, Any]:
 
         audience = st.selectbox(
             "Target Audience",
-            ["Business Executives", "Investors", "Technical Team", "Board of Directors", "General Audience"],
+            [
+                "Business Executives",
+                "Investors",
+                "Technical Team",
+                "Board of Directors",
+                "General Audience",
+            ],
             index=0,
         )
 
@@ -675,7 +814,7 @@ def render_sidebar() -> Dict[str, Any]:
             f'<span style="width:8px;height:8px;border-radius:50%;background:{color};'
             f'box-shadow:0 0 6px {color};display:inline-block;"></span>'
             f'<span style="font-weight:600;color:{color};font-size:0.85rem;">{label}</span>'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -696,9 +835,322 @@ def render_sidebar() -> Dict[str, Any]:
 
 # ── Main Phases ─────────────────────────────────────────────
 
+
+def _load_demo_config() -> list:
+    """Load demo PPT configurations from demo_config.json."""
+    demo_config_path = (
+        Path(__file__).resolve().parent / "demo_ppts" / "demo_config.json"
+    )
+    if demo_config_path.exists():
+        with open(demo_config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("demo_ppts", [])
+    return []
+
+
+def _load_demo_status() -> dict:
+    """Load demo PPT generation status."""
+    status_path = Path(__file__).resolve().parent / "demo_ppts" / "demo_status.json"
+    if status_path.exists():
+        with open(status_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"demos": {}, "last_full_run": None}
+
+
+def _get_snake_game_html() -> str:
+    """Return HTML/JS/CSS for an embedded Snake mini-game."""
+    return """
+    <div style="text-align:center;font-family:'Segoe UI',sans-serif;">
+      <div style="font-size:13px;font-weight:700;color:#67B8F0;margin-bottom:6px;">🐍 Snake Game</div>
+      <div style="font-size:11px;color:#5A7A9A;margin-bottom:8px;">Use arrow keys or swipe to play!</div>
+      <canvas id="snakeCanvas" width="280" height="280"
+        style="border:2px solid rgba(74,144,217,0.3);border-radius:10px;background:#0D1728;display:block;margin:0 auto;"></canvas>
+      <div id="scoreDisplay" style="font-size:12px;color:#A8D8FF;margin-top:8px;font-weight:600;">Score: 0</div>
+      <div style="margin-top:6px;">
+        <button onclick="resetGame()" style="
+          padding:5px 16px;border-radius:8px;border:1px solid rgba(74,144,217,0.3);
+          background:rgba(74,144,217,0.15);color:#67B8F0;font-size:11px;font-weight:600;
+          cursor:pointer;transition:all 0.2s;
+        ">🔄 Restart</button>
+      </div>
+      <script>
+        const canvas = document.getElementById('snakeCanvas');
+        const ctx = canvas.getContext('2d');
+        const gridSize = 14;
+        const tileCount = canvas.width / gridSize;
+        let snake = [{x:10,y:10}];
+        let food = {x:15,y:15};
+        let dx = 0, dy = 0;
+        let score = 0;
+        let gameOver = false;
+        let speed = 120;
+        let gameInterval;
+
+        function placeFood() {
+          food.x = Math.floor(Math.random() * tileCount);
+          food.y = Math.floor(Math.random() * tileCount);
+          for (let s of snake) {
+            if (s.x === food.x && s.y === food.y) { placeFood(); return; }
+          }
+        }
+
+        function drawGame() {
+          if (gameOver) return;
+          // Move
+          const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+          // Wall wrap
+          if (head.x < 0) head.x = tileCount - 1;
+          if (head.x >= tileCount) head.x = 0;
+          if (head.y < 0) head.y = tileCount - 1;
+          if (head.y >= tileCount) head.y = 0;
+          // Self collision - only check if snake is moving
+          if (dx !== 0 || dy !== 0) {
+            for (let s of snake) {
+              if (s.x === head.x && s.y === head.y) { gameOver = true; break; }
+            }
+          }
+          if (gameOver) {
+            ctx.fillStyle = 'rgba(13,23,40,0.85)';
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            ctx.fillStyle = '#E74C3C';
+            ctx.font = 'bold 18px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over!', canvas.width/2, canvas.height/2 - 5);
+            ctx.fillStyle = '#A8D8FF';
+            ctx.font = '13px Segoe UI';
+            ctx.fillText('Click Restart to play again', canvas.width/2, canvas.height/2 + 20);
+            return;
+          }
+          snake.unshift(head);
+          if (head.x === food.x && head.y === food.y) {
+            score += 10;
+            document.getElementById('scoreDisplay').textContent = 'Score: ' + score;
+            placeFood();
+            if (speed > 60) speed -= 2;
+          } else {
+            snake.pop();
+          }
+          // Draw
+          ctx.fillStyle = '#0D1728';
+          ctx.fillRect(0,0,canvas.width,canvas.height);
+          // Grid lines (subtle)
+          ctx.strokeStyle = 'rgba(74,144,217,0.05)';
+          for (let i = 0; i < tileCount; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i*gridSize,0); ctx.lineTo(i*gridSize,canvas.height);
+            ctx.moveTo(0,i*gridSize); ctx.lineTo(canvas.width,i*gridSize);
+            ctx.stroke();
+          }
+          // Food
+          ctx.fillStyle = '#E74C3C';
+          ctx.shadowBlur = 8; ctx.shadowColor = '#E74C3C';
+          ctx.beginPath();
+          ctx.arc(food.x*gridSize+gridSize/2, food.y*gridSize+gridSize/2, gridSize/2-2, 0, Math.PI*2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          // Snake
+          for (let i = 0; i < snake.length; i++) {
+            const ratio = 1 - (i / snake.length) * 0.6;
+            const r = Math.round(74 * ratio); const g = Math.round(144 + (111-144)*ratio); const b = Math.round(217 + (96-217)*ratio);
+            ctx.fillStyle = i === 0 ? '#67B8F0' : `rgba(${74+i*3},${144+i*2},${217-i*4},${ratio})`;
+            ctx.shadowBlur = i === 0 ? 6 : 0;
+            ctx.shadowColor = '#67B8F0';
+            const pad = i === 0 ? 1 : 2;
+            ctx.beginPath();
+            ctx.roundRect(snake[i].x*gridSize+pad, snake[i].y*gridSize+pad, gridSize-pad*2, gridSize-pad*2, 3);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+
+        function resetGame() {
+          snake = [{x:10,y:10}];
+          dx = 0; dy = 0;
+          score = 0; gameOver = false; speed = 120;
+          document.getElementById('scoreDisplay').textContent = 'Score: 0';
+          placeFood();
+          if (gameInterval) clearInterval(gameInterval);
+          gameInterval = setInterval(drawGame, speed);
+        }
+
+        document.addEventListener('keydown', (e) => {
+          switch(e.key) {
+            case 'ArrowUp':    if (dy !== 1) {dx=0;dy=-1;} break;
+            case 'ArrowDown':  if (dy !== -1){dx=0;dy=1;}  break;
+            case 'ArrowLeft':  if (dx !== 1) {dx=-1;dy=0;} break;
+            case 'ArrowRight': if (dx !== -1){dx=1;dy=0;}  break;
+          }
+          e.preventDefault();
+        });
+
+        // Touch support
+        let touchStartX, touchStartY;
+        canvas.addEventListener('touchstart', (e) => {
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+        });
+        canvas.addEventListener('touchend', (e) => {
+          const diffX = e.changedTouches[0].clientX - touchStartX;
+          const diffY = e.changedTouches[0].clientY - touchStartY;
+          if (Math.abs(diffX) > Math.abs(diffY)) {
+            if (diffX > 0 && dx !== -1) {dx=1;dy=0;}
+            else if (diffX < 0 && dx !== 1) {dx=-1;dy=0;}
+          } else {
+            if (diffY > 0 && dy !== -1) {dx=0;dy=1;}
+            else if (diffY < 0 && dy !== 1) {dx=0;dy=-1;}
+          }
+        });
+
+        placeFood();
+        gameInterval = setInterval(drawGame, speed);
+      </script>
+    </div>
+    """
+
+
+def _render_demo_ppts_section() -> None:
+    """Render the Demo PPTs section on the idle page."""
+    demo_configs = _load_demo_config()
+    demo_status = _load_demo_status()
+
+    if not demo_configs:
+        return
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        '<p class="demo-section-title">📂 Demo Presentations</p>',
+        unsafe_allow_html=True,
+    )
+
+    # Status info
+    last_run = demo_status.get("last_full_run")
+    if last_run:
+        try:
+            last_dt = datetime.fromisoformat(last_run)
+            age_str = last_dt.strftime("%b %d, %Y at %I:%M %p")
+        except (ValueError, TypeError):
+            age_str = "Unknown"
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem;">'
+            f'<span class="demo-section-subtitle" style="margin-bottom:0;">'
+            f"Explore AI-generated presentations — auto-refreshed weekly with the latest data</span>"
+            f'<span class="demo-refresh-badge">🔄 Updated: {age_str}</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<p class="demo-section-subtitle">'
+            "Explore what this engine can create — run <code>python demo_ppts/generate_demos.py</code> to generate demos"
+            "</p>",
+            unsafe_allow_html=True,
+        )
+
+    # Render demo cards — 3 + 2 layout
+    demos_status = demo_status.get("demos", {})
+
+    row1_configs = demo_configs[:3]
+    row2_configs = demo_configs[3:]
+
+    for row_configs in [row1_configs, row2_configs]:
+        cols = st.columns(len(row_configs))
+        for col, dcfg in zip(cols, row_configs):
+            with col:
+                d_id = dcfg["id"]
+                d_status = demos_status.get(d_id, {})
+                accent = dcfg.get("color_accent", "#4A90D9")
+                icon = dcfg.get("icon", "📄")
+                title = dcfg["title"]
+                desc = dcfg.get("description", "")[:140]
+                audience = dcfg.get("audience", "business executives").title()
+                slides_n = dcfg.get("target_slides", 12)
+                subtopics = dcfg.get("subtopics", [])
+
+                gen_at = d_status.get("generated_at", "")
+                file_size = d_status.get("file_size_kb", 0)
+                status_ok = d_status.get("status") == "success"
+                file_path = d_status.get("file_path", "")
+
+                # Timestamp formatting
+                time_info = ""
+                if gen_at:
+                    try:
+                        dt = datetime.fromisoformat(gen_at)
+                        time_info = dt.strftime("%b %d, %Y")
+                    except (ValueError, TypeError):
+                        time_info = ""
+
+                # Subtopics preview
+                subtopics_html = ""
+                if subtopics:
+                    items = "".join(
+                        f'<div style="font-size:0.7rem;color:#5A7A9A;padding:2px 0;">• {st_name}</div>'
+                        for st_name in subtopics[:4]
+                    )
+                    if len(subtopics) > 4:
+                        items += f'<div style="font-size:0.68rem;color:#3D6A8F;">+{len(subtopics) - 4} more...</div>'
+                    subtopics_html = f'<div style="margin-top:0.4rem;">{items}</div>'
+
+                updated_html = ""
+                if time_info:
+                    updated_html = (
+                        f'<div class="demo-updated">'
+                        f"<span>🕐</span> Generated: {time_info}"
+                        f"{' · ' + str(file_size) + ' KB' if file_size else ''}"
+                        f"</div>"
+                    )
+
+                st.markdown(
+                    f'<div class="demo-card" style="--accent:{accent};">'
+                    f'<div style="position:absolute;top:0;left:0;right:0;height:3px;'
+                    f'background:{accent};border-radius:14px 14px 0 0;"></div>'
+                    f'<span class="demo-card-icon">{icon}</span>'
+                    f'<div class="demo-card-title">{title}</div>'
+                    f'<div class="demo-card-desc">{desc}</div>'
+                    f'<div class="demo-card-meta">'
+                    f'<span class="demo-badge">📄 {slides_n} slides</span>'
+                    f'<span class="demo-badge">👥 {audience}</span>'
+                    f"{'<span class=demo-badge style=color:#27AE60;border-color:rgba(39,174,96,0.2)>✅ Ready</span>' if status_ok else '<span class=demo-badge style=color:#F39C12;border-color:rgba(243,156,18,0.2)>⏳ Pending</span>'}"
+                    f"</div>"
+                    f"{updated_html}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+                # Show prompt details in an expander
+                with st.expander(f"📋 View Prompt & Config", expanded=False):
+                    st.markdown(
+                        f"**Topic:**\n> {dcfg['topic']}\n\n"
+                        f"**Audience:** {audience}\n\n"
+                        f"**Research Depth:** {dcfg.get('num_subtopics', 6)} subtopics\n\n"
+                        f"**Target Slides:** {slides_n}"
+                    )
+                    if subtopics:
+                        st.markdown("**Key Subtopics:**")
+                        for st_name in subtopics:
+                            st.markdown(f"- {st_name}")
+
+                # Download button if file exists
+                if status_ok and file_path:
+                    fp = Path(file_path)
+                    if fp.exists():
+                        with open(fp, "rb") as f:
+                            st.download_button(
+                                "⬇️ Download PPTX",
+                                data=f.read(),
+                                file_name=fp.name,
+                                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                key=f"demo_dl_{d_id}",
+                                use_container_width=True,
+                            )
+
+
 def phase_idle(config: Dict[str, Any]) -> None:
     """Idle phase: waiting for user to start."""
-    st.markdown('<p class="main-header">Finance Research PPT Builder</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="main-header">Finance Research PPT Builder</p>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<p class="sub-header">AI-powered presentation generator with grounded financial research</p>',
         unsafe_allow_html=True,
@@ -711,27 +1163,27 @@ def phase_idle(config: Dict[str, Any]) -> None:
         st.markdown(
             '<div class="feature-card">'
             '<span class="feature-icon">🔍</span>'
-            '<h4>Deep Research</h4>'
-            '<p>Grounded search with source verification and confidence scoring</p>'
-            '</div>',
+            "<h4>Deep Research</h4>"
+            "<p>Grounded search with source verification and confidence scoring</p>"
+            "</div>",
             unsafe_allow_html=True,
         )
     with col2:
         st.markdown(
             '<div class="feature-card">'
             '<span class="feature-icon">📐</span>'
-            '<h4>Smart Planning</h4>'
-            '<p>Framework-based narrative with storyline approval workflow</p>'
-            '</div>',
+            "<h4>Smart Planning</h4>"
+            "<p>Framework-based narrative with storyline approval workflow</p>"
+            "</div>",
             unsafe_allow_html=True,
         )
     with col3:
         st.markdown(
             '<div class="feature-card">'
             '<span class="feature-icon">📊</span>'
-            '<h4>Pro Generation</h4>'
-            '<p>Professional charts, tables, and layouts — ready to present</p>'
-            '</div>',
+            "<h4>Pro Generation</h4>"
+            "<p>Professional charts, tables, and layouts — ready to present</p>"
+            "</div>",
             unsafe_allow_html=True,
         )
 
@@ -741,9 +1193,11 @@ def phase_idle(config: Dict[str, Any]) -> None:
         st.markdown(
             '<div class="glass-card" style="text-align:center;padding:2rem;">'
             '<p style="color:#7B9DBF;font-size:1rem;margin:0;">'
-            'Enter a topic in the sidebar to begin</p></div>',
+            "Enter a topic in the sidebar to begin</p></div>",
             unsafe_allow_html=True,
         )
+        # Show demo PPTs section even when no topic is entered
+        _render_demo_ppts_section()
         return
 
     st.markdown(
@@ -755,7 +1209,7 @@ def phase_idle(config: Dict[str, Any]) -> None:
         f'<span class="stat-badge">📚 {config["num_subtopics"]} subtopics</span>'
         f'<span class="stat-badge">📄 {config["target_slides"]} slides</span>'
         f'<span class="stat-badge">👥 {config["audience"].title()}</span>'
-        f'</div></div>',
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -763,6 +1217,9 @@ def phase_idle(config: Dict[str, Any]) -> None:
     if st.button("🚀  Start Research", type="primary", use_container_width=True):
         st.session_state.pipeline_phase = "researching"
         st.rerun()
+
+    # Show demo PPTs section below the start button
+    _render_demo_ppts_section()
 
 
 def phase_researching(config: Dict[str, Any]) -> None:
@@ -772,30 +1229,34 @@ def phase_researching(config: Dict[str, Any]) -> None:
 
     orchestrator = get_orchestrator()
 
-    # Rich loading UI
-    st.markdown(
-        '<div class="glass-card loading-container">'
-        '<div class="loading-spinner"></div>'
-        '<div class="loading-title">Researching Your Topic</div>'
-        '<div class="loading-subtitle">AI agents are working in parallel to gather data</div>'
-        '<div class="shimmer-bar"></div>'
-        '<div class="loading-steps">'
-        '<div class="loading-step active"><span class="loading-step-icon">🔍</span> Decomposing topic into subtopics</div>'
-        '<div class="loading-step active"><span class="loading-step-icon">🌐</span> Running grounded searches (concurrent)</div>'
-        '<div class="loading-step"><span class="loading-step-icon">🧠</span> Synthesizing research findings</div>'
-        '</div>'
-        f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # Rich loading UI — split layout: loading info (left) + mini game (right)
+    col_loading, col_game = st.columns([3, 2])
+    with col_loading:
+        st.markdown(
+            '<div class="glass-card loading-container">'
+            '<div class="loading-spinner"></div>'
+            '<div class="loading-title">Researching Your Topic</div>'
+            '<div class="loading-subtitle">AI agents are working in parallel to gather data</div>'
+            '<div class="shimmer-bar"></div>'
+            '<div class="loading-steps">'
+            '<div class="loading-step active"><span class="loading-step-icon">🔍</span> Decomposing topic into subtopics</div>'
+            '<div class="loading-step active"><span class="loading-step-icon">🌐</span> Running grounded searches (concurrent)</div>'
+            '<div class="loading-step"><span class="loading-step-icon">🧠</span> Synthesizing research findings</div>'
+            "</div>"
+            f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with col_game:
+        st.markdown('<div class="minigame-wrapper">', unsafe_allow_html=True)
+        components.html(_get_snake_game_html(), height=440)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     try:
         focus_subtopics = None
         if config.get("subtopics_input"):
             focus_subtopics = [
-                s.strip()
-                for s in config["subtopics_input"].split("\n")
-                if s.strip()
+                s.strip() for s in config["subtopics_input"].split("\n") if s.strip()
             ]
 
         findings = orchestrator.run_research(
@@ -815,7 +1276,10 @@ def phase_researching(config: Dict[str, Any]) -> None:
 
 def phase_framework_selection(config: Dict[str, Any]) -> None:
     """Framework selection and outline generation."""
-    st.markdown('<p class="phase-title">Phase 2 — Choose Your Structure</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="phase-title">Phase 2 — Choose Your Structure</p>',
+        unsafe_allow_html=True,
+    )
     render_progress_bar("framework_selection")
 
     orchestrator = get_orchestrator()
@@ -823,17 +1287,25 @@ def phase_framework_selection(config: Dict[str, Any]) -> None:
     # Show research findings summary
     findings = st.session_state.research_findings
     if findings:
-        with st.expander(f"📚 Research Findings ({len(findings)} topics)", expanded=False):
+        with st.expander(
+            f"📚 Research Findings ({len(findings)} topics)", expanded=False
+        ):
             for f in findings:
-                confidence_color = "#27AE60" if f.confidence > 0.7 else "#F39C12" if f.confidence > 0.4 else "#E74C3C"
+                confidence_color = (
+                    "#27AE60"
+                    if f.confidence > 0.7
+                    else "#F39C12"
+                    if f.confidence > 0.4
+                    else "#E74C3C"
+                )
                 st.markdown(
                     f'<div class="glass-card" style="padding:0.75rem 1rem;">'
                     f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                     f'<span style="font-weight:600;color:#C8D6E5;">{f.topic}</span>'
                     f'<span style="color:{confidence_color};font-weight:700;font-size:0.85rem;">'
-                    f'{f.confidence:.0%}</span></div>'
+                    f"{f.confidence:.0%}</span></div>"
                     f'<div style="color:#7B9DBF;font-size:0.85rem;margin-top:4px;">'
-                    f'{f.content[:200]}...</div></div>',
+                    f"{f.content[:200]}...</div></div>",
                     unsafe_allow_html=True,
                 )
                 if f.sources:
@@ -841,20 +1313,26 @@ def phase_framework_selection(config: Dict[str, Any]) -> None:
 
     # Generate frameworks + outlines
     if st.session_state.outline_a is None:
-        st.markdown(
-            '<div class="glass-card loading-container">'
-            '<div class="loading-spinner"></div>'
-            '<div class="loading-title">Analyzing Frameworks</div>'
-            '<div class="loading-subtitle">Selecting the best narrative structures for your topic</div>'
-            '<div class="shimmer-bar"></div>'
-            '<div class="loading-steps">'
-            '<div class="loading-step active"><span class="loading-step-icon">🎯</span> Evaluating 7 framework options</div>'
-            '<div class="loading-step active"><span class="loading-step-icon">📋</span> Generating two competing outlines</div>'
-            '</div>'
-            f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        col_loading, col_game = st.columns([3, 2])
+        with col_loading:
+            st.markdown(
+                '<div class="glass-card loading-container">'
+                '<div class="loading-spinner"></div>'
+                '<div class="loading-title">Analyzing Frameworks</div>'
+                '<div class="loading-subtitle">Selecting the best narrative structures for your topic</div>'
+                '<div class="shimmer-bar"></div>'
+                '<div class="loading-steps">'
+                '<div class="loading-step active"><span class="loading-step-icon">🎯</span> Evaluating 7 framework options</div>'
+                '<div class="loading-step active"><span class="loading-step-icon">📋</span> Generating two competing outlines</div>'
+                "</div>"
+                f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
+                "</div>",
+                unsafe_allow_html=True,
+            )
+        with col_game:
+            st.markdown('<div class="minigame-wrapper">', unsafe_allow_html=True)
+            components.html(_get_snake_game_html(), height=440)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         try:
             choices = orchestrator.run_framework_selection(config["audience"])
@@ -883,16 +1361,21 @@ def _render_outline_comparison() -> None:
 
     st.markdown(
         '<div style="color:#C8D6E5;font-size:0.95rem;margin-bottom:1rem;">'
-        'Two outlines have been generated. Select the one that best fits your needs.</div>',
+        "Two outlines have been generated. Select the one that best fits your needs.</div>",
         unsafe_allow_html=True,
     )
 
     col_a, col_b = st.columns(2)
 
     layout_icons = {
-        "title": "🎯", "bullet": "📝", "chart": "📊",
-        "table": "📋", "split": "↔️", "exec_summary": "📈",
-        "section_divider": "📌", "closing": "🏁",
+        "title": "🎯",
+        "bullet": "📝",
+        "chart": "📊",
+        "table": "📋",
+        "split": "↔️",
+        "exec_summary": "📈",
+        "section_divider": "📌",
+        "closing": "🏁",
     }
 
     for col, outline, choice_idx, key_suffix, label in [
@@ -911,7 +1394,7 @@ def _render_outline_comparison() -> None:
                     f'<div class="slide-row">'
                     f'<span class="slide-num">{slide.id}</span>'
                     f'<span class="slide-icon">{icon}</span>'
-                    f'{slide.title}</div>'
+                    f"{slide.title}</div>"
                 )
 
             st.markdown(
@@ -921,7 +1404,7 @@ def _render_outline_comparison() -> None:
                 f'<div style="display:flex;gap:8px;margin-bottom:1rem;">'
                 f'<span class="stat-badge">🎨 {outline.theme}</span>'
                 f'<span class="stat-badge">📄 {len(outline.slides)} slides</span></div>'
-                f'{slide_rows}</div>',
+                f"{slide_rows}</div>",
                 unsafe_allow_html=True,
             )
 
@@ -940,7 +1423,10 @@ def _render_outline_comparison() -> None:
 
 def phase_storyline_approval(config: Dict[str, Any]) -> None:
     """Storyline approval: user reviews the selected outline before generation."""
-    st.markdown('<p class="phase-title">Phase 3 — Storyline Approval</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="phase-title">Phase 3 — Storyline Approval</p>',
+        unsafe_allow_html=True,
+    )
     render_progress_bar("storyline_approval")
 
     outline = st.session_state.selected_outline
@@ -950,9 +1436,14 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
         return
 
     layout_icons = {
-        "title": "🎯", "bullet": "📝", "chart": "📊",
-        "table": "📋", "split": "↔️", "exec_summary": "📈",
-        "section_divider": "📌", "closing": "🏁",
+        "title": "🎯",
+        "bullet": "📝",
+        "chart": "📊",
+        "table": "📋",
+        "split": "↔️",
+        "exec_summary": "📈",
+        "section_divider": "📌",
+        "closing": "🏁",
     }
 
     # Summary badges
@@ -967,14 +1458,14 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
         f'<span class="stat-badge">📄 {len(outline.slides)} slides</span>'
         f'<span class="stat-badge">📊 {chart_count} visuals</span>'
         f'<span class="stat-badge">📝 {text_count} text</span>'
-        f'</div></div>',
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
     st.markdown(
         '<div style="color:#7B9DBF;font-size:0.9rem;margin-bottom:1rem;">'
-        'Review the storyline below. Approve to proceed with content generation, '
-        'or go back to choose a different structure.</div>',
+        "Review the storyline below. Approve to proceed with content generation, "
+        "or go back to choose a different structure.</div>",
         unsafe_allow_html=True,
     )
 
@@ -986,12 +1477,12 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
             visual_badge = (
                 f'<span style="background:rgba(39,174,96,0.15);color:#27AE60;'
                 f'padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;">'
-                f'{slide.visual_type.replace("_", " ").title()}</span>'
+                f"{slide.visual_type.replace('_', ' ').title()}</span>"
             )
         layout_badge = (
             f'<span style="background:rgba(74,144,217,0.15);color:#67B8F0;'
             f'padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;">'
-            f'{slide.layout_type.replace("_", " ").title()}</span>'
+            f"{slide.layout_type.replace('_', ' ').title()}</span>"
         )
         insight_html = ""
         if slide.key_insight:
@@ -1002,8 +1493,8 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
             f'<div class="sd-title">{icon} Slide {slide.id}: {slide.title}</div>'
             f'<div class="sd-meta" style="display:flex;gap:6px;">{layout_badge}{visual_badge}</div>'
-            f'</div>'
-            f'{insight_html}</div>',
+            f"</div>"
+            f"{insight_html}</div>",
             unsafe_allow_html=True,
         )
 
@@ -1011,7 +1502,11 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
         if slide.layout_type not in ("title", "closing"):
             current_option = _get_current_visual_option(slide)
             options_list = list(VISUAL_TYPE_OPTIONS.keys())
-            current_idx = options_list.index(current_option) if current_option in options_list else len(options_list) - 1
+            current_idx = (
+                options_list.index(current_option)
+                if current_option in options_list
+                else len(options_list) - 1
+            )
             selected = st.selectbox(
                 "Visual Type",
                 options=options_list,
@@ -1028,8 +1523,10 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
 
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
-        if st.button("✅  Approve & Generate Content", type="primary", use_container_width=True):
-            st.session_state.pipeline_phase = "generating"
+        if st.button(
+            "✅  Approve & Select Theme", type="primary", use_container_width=True
+        ):
+            st.session_state.pipeline_phase = "theme_selection"
             st.rerun()
     with col2:
         if st.button("↩  Choose Different Structure", use_container_width=True):
@@ -1048,31 +1545,40 @@ def phase_storyline_approval(config: Dict[str, Any]) -> None:
 
 def phase_generating(config: Dict[str, Any]) -> None:
     """Content generation phase."""
-    st.markdown('<p class="phase-title">Phase 4 — Generating Content</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="phase-title">Phase 4 — Generating Content</p>',
+        unsafe_allow_html=True,
+    )
     render_progress_bar("generating")
 
     orchestrator = get_orchestrator()
     outline = st.session_state.selected_outline
 
-    st.markdown(
-        f'<div class="glass-card loading-container">'
-        f'<div class="loading-spinner"></div>'
-        f'<div class="loading-title">Building {len(outline.slides)} Slides</div>'
-        f'<div class="loading-subtitle">Using <strong>{outline.framework_name}</strong> framework</div>'
-        f'<div class="shimmer-bar"></div>'
-        f'<div class="loading-steps">'
-        f'<div class="loading-step active"><span class="loading-step-icon">🔬</span> Deep research for data-heavy slides (parallel)</div>'
-        f'<div class="loading-step active"><span class="loading-step-icon">📐</span> Confirming optimal layouts (parallel)</div>'
-        f'<div class="loading-step active"><span class="loading-step-icon">✍️</span> Writing slide content (parallel)</div>'
-        f'<div class="loading-step active"><span class="loading-step-icon">🧠</span> AI deciding slide render strategies (parallel)</div>'
-        f'<div class="loading-step active"><span class="loading-step-icon">🖼️</span> Generating full-slide images for text-heavy slides</div>'
-        f'<div class="loading-step active"><span class="loading-step-icon">🎨</span> Generating infographics for visual slides</div>'
-        f'<div class="loading-step active"><span class="loading-step-icon">✨</span> AI polishing ALL slides via Nano Banana Pro</div>'
-        f'</div>'
-        f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    col_loading, col_game = st.columns([3, 2])
+    with col_loading:
+        st.markdown(
+            f'<div class="glass-card loading-container">'
+            f'<div class="loading-spinner"></div>'
+            f'<div class="loading-title">Building {len(outline.slides)} Slides</div>'
+            f'<div class="loading-subtitle">Using <strong>{outline.framework_name}</strong> framework</div>'
+            f'<div class="shimmer-bar"></div>'
+            f'<div class="loading-steps">'
+            f'<div class="loading-step active"><span class="loading-step-icon">🔬</span> Deep research for data-heavy slides (parallel)</div>'
+            f'<div class="loading-step active"><span class="loading-step-icon">📐</span> Confirming optimal layouts (parallel)</div>'
+            f'<div class="loading-step active"><span class="loading-step-icon">✍️</span> Writing slide content (parallel)</div>'
+            f'<div class="loading-step active"><span class="loading-step-icon">🧠</span> AI deciding slide render strategies (parallel)</div>'
+            f'<div class="loading-step active"><span class="loading-step-icon">🖼️</span> Generating full-slide images for text-heavy slides</div>'
+            f'<div class="loading-step active"><span class="loading-step-icon">🎨</span> Generating infographics for visual slides</div>'
+            f'<div class="loading-step active"><span class="loading-step-icon">✨</span> AI polishing ALL slides via Nano Banana Pro</div>'
+            f"</div>"
+            f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with col_game:
+        st.markdown('<div class="minigame-wrapper">', unsafe_allow_html=True)
+        components.html(_get_snake_game_html(), height=440)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     try:
         contents = orchestrator.run_content_generation()
@@ -1104,7 +1610,7 @@ def phase_generating(config: Dict[str, Any]) -> None:
         # Run layout validation (non-blocking)
         orchestrator.run_layout_validation()
 
-        st.session_state.pipeline_phase = "layout_selection"
+        st.session_state.pipeline_phase = "review"
         st.rerun()
 
     except Exception as e:
@@ -1113,20 +1619,23 @@ def phase_generating(config: Dict[str, Any]) -> None:
         st.rerun()
 
 
-def phase_layout_selection(config: Dict[str, Any]) -> None:
-    """Layout / Theme selection: show 2 themed sample slides side-by-side."""
-    st.markdown('<p class="phase-title">Phase 5 — Choose Your Theme</p>', unsafe_allow_html=True)
-    render_progress_bar("layout_selection")
+def phase_theme_selection(config: Dict[str, Any]) -> None:
+    """Theme selection: show 2 themed sample slides side-by-side using outline content."""
+    st.markdown(
+        '<p class="phase-title">Phase 4 — Choose Your Theme</p>', unsafe_allow_html=True
+    )
+    render_progress_bar("theme_selection")
 
-    contents = st.session_state.slide_contents
     outline = st.session_state.selected_outline
 
-    if not contents or not outline:
-        st.session_state.pipeline_phase = "generating"
+    if not outline:
+        st.session_state.pipeline_phase = "storyline_approval"
         st.rerun()
         return
 
     # ── Pick a representative slide for preview ──
+    # We use the SlidePlan itself as "content" for the preview since generation hasn't happened yet.
+    # SlidePlan has title, key_insight, and content_bullets which is enough for a basic preview.
     preview_idx = 0
     for i, s in enumerate(outline.slides):
         if s.layout_type in ("bullet", "split", "chart"):
@@ -1134,7 +1643,12 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
             break
 
     preview_plan = outline.slides[preview_idx]
-    preview_content = contents[preview_idx]
+    # Use plan as content proxy
+    preview_content = SlideContent(
+        title=preview_plan.title, 
+        content_bullets=preview_plan.content_bullets,
+        key_insight=preview_plan.key_insight
+    )
 
     title_idx = 0
     for i, s in enumerate(outline.slides):
@@ -1142,7 +1656,11 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
             title_idx = i
             break
     title_plan = outline.slides[title_idx]
-    title_content = contents[title_idx]
+    title_content = SlideContent(
+        title=title_plan.title,
+        content_bullets=[],
+        key_insight=""
+    )
 
     # ── Generate theme previews (once) ──
     if st.session_state.theme_previews is None:
@@ -1167,8 +1685,8 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
 
     st.markdown(
         '<div style="color:#C8D6E5;font-size:0.95rem;margin-bottom:1rem;">'
-        'Two visual themes have been generated. Select the one that best matches '
-        'your presentation style. You can also choose from all available themes below.</div>',
+        "Two visual themes have been generated. Select the one that best matches "
+        "your presentation style. Determining the theme now helps the AI generate content with the right tone.</div>",
         unsafe_allow_html=True,
     )
 
@@ -1197,14 +1715,14 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
                 f'border:1px solid rgba(255,255,255,0.2);"></div>'
                 f'<span style="font-size:0.75rem;color:#7B9DBF;">Accent</span></div>'
                 f'<span class="stat-badge">{theme.font_family}</span>'
-                f'</div></div>',
+                f"</div></div>",
                 unsafe_allow_html=True,
             )
 
             st.markdown(
                 '<div style="font-size:0.75rem;color:#5A7A9A;font-weight:600;'
                 'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">'
-                'Title Slide</div>',
+                "Title Slide</div>",
                 unsafe_allow_html=True,
             )
             st.image(tp[f"preview_{prefix}_title"], use_container_width=True)
@@ -1212,7 +1730,7 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
             st.markdown(
                 '<div style="font-size:0.75rem;color:#5A7A9A;font-weight:600;'
                 'text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 4px 0;">'
-                'Content Slide</div>',
+                "Content Slide</div>",
                 unsafe_allow_html=True,
             )
             st.image(tp[f"preview_{prefix}_body"], use_container_width=True)
@@ -1228,7 +1746,8 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
                 st.session_state.selected_theme = selected
                 orchestrator.set_theme(selected)
                 st.session_state.slide_previews = None
-                st.session_state.pipeline_phase = "review"
+                # Transition to CONTENT GENERATION instead of REVIEW
+                st.session_state.pipeline_phase = "generating"
                 st.rerun()
 
     # ── Or pick from all themes ──
@@ -1247,9 +1766,9 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
                     f'<div style="width:24px;height:24px;border-radius:50%;background:{theme.accent_hex};'
                     f'border:2px solid rgba(255,255,255,0.2);"></div></div>'
                     f'<div style="font-weight:700;color:#C8D6E5;font-size:0.85rem;margin-bottom:4px;">'
-                    f'{theme.display_name}</div>'
+                    f"{theme.display_name}</div>"
                     f'<div style="color:#5A7A9A;font-size:0.7rem;">{theme.description}</div>'
-                    f'</div>',
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
                 if st.button(
@@ -1261,7 +1780,7 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
                     st.session_state.selected_theme = theme
                     orchestrator.set_theme(theme)
                     st.session_state.slide_previews = None
-                    st.session_state.pipeline_phase = "review"
+                    st.session_state.pipeline_phase = "generating"
                     st.rerun()
 
     # ── Re-shuffle themes ──
@@ -1275,7 +1794,9 @@ def phase_layout_selection(config: Dict[str, Any]) -> None:
 
 def phase_review(config: Dict[str, Any]) -> None:
     """Review phase: slide-by-slide visual preview with approval workflow."""
-    st.markdown('<p class="phase-title">Phase 6 — Review & Approve</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="phase-title">Phase 6 — Review & Approve</p>', unsafe_allow_html=True
+    )
     render_progress_bar("review")
 
     orchestrator = get_orchestrator()
@@ -1319,9 +1840,9 @@ def phase_review(config: Dict[str, Any]) -> None:
         f'<span class="stat-badge" style="background:rgba(39,174,96,0.15);color:#27AE60;border-color:rgba(39,174,96,0.3);">✅ {approved_count} Approved</span>'
         f'<span class="stat-badge" style="background:rgba(231,76,60,0.15);color:#E74C3C;border-color:rgba(231,76,60,0.3);">❌ {rejected_count} Rejected</span>'
         f'<span class="stat-badge">⏳ {pending_count} Pending</span>'
-        f'</div>'
+        f"</div>"
         f'<span style="color:#7B9DBF;font-size:0.9rem;">Slide {idx + 1} of {total_slides}</span>'
-        f'</div></div>',
+        f"</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -1330,9 +1851,33 @@ def phase_review(config: Dict[str, Any]) -> None:
     for i in range(min(total_slides, 12)):
         with thumb_cols[i]:
             status = approvals.get(i)
-            border_color = "rgba(39,174,96,0.8)" if status == "approved" else "rgba(231,76,60,0.8)" if status == "rejected" else "rgba(74,144,217,0.5)" if i == idx else "rgba(74,144,217,0.15)"
-            bg = "rgba(39,174,96,0.1)" if status == "approved" else "rgba(231,76,60,0.1)" if status == "rejected" else "rgba(74,144,217,0.15)" if i == idx else "rgba(22,34,54,0.4)"
-            icon = "✅" if status == "approved" else "❌" if status == "rejected" else "▸" if i == idx else str(i + 1)
+            border_color = (
+                "rgba(39,174,96,0.8)"
+                if status == "approved"
+                else "rgba(231,76,60,0.8)"
+                if status == "rejected"
+                else "rgba(74,144,217,0.5)"
+                if i == idx
+                else "rgba(74,144,217,0.15)"
+            )
+            bg = (
+                "rgba(39,174,96,0.1)"
+                if status == "approved"
+                else "rgba(231,76,60,0.1)"
+                if status == "rejected"
+                else "rgba(74,144,217,0.15)"
+                if i == idx
+                else "rgba(22,34,54,0.4)"
+            )
+            icon = (
+                "✅"
+                if status == "approved"
+                else "❌"
+                if status == "rejected"
+                else "▸"
+                if i == idx
+                else str(i + 1)
+            )
             if st.button(icon, key=f"thumb_{i}", use_container_width=True):
                 st.session_state.review_slide_idx = i
                 st.rerun()
@@ -1370,7 +1915,7 @@ def phase_review(config: Dict[str, Any]) -> None:
                 f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">'
                 f'<span class="stat-badge" style="font-size:0.7rem;padding:3px 8px;">{slide.layout_type}</span>'
                 f'<span class="stat-badge" style="font-size:0.7rem;padding:3px 8px;">{slide.visual_type}</span>'
-                f'</div></div>',
+                f"</div></div>",
                 unsafe_allow_html=True,
             )
 
@@ -1378,7 +1923,11 @@ def phase_review(config: Dict[str, Any]) -> None:
             if slide.layout_type not in ("title", "closing"):
                 current_option = _get_current_visual_option(slide)
                 options_list = list(VISUAL_TYPE_OPTIONS.keys())
-                current_vis_idx = options_list.index(current_option) if current_option in options_list else len(options_list) - 1
+                current_vis_idx = (
+                    options_list.index(current_option)
+                    if current_option in options_list
+                    else len(options_list) - 1
+                )
                 selected_visual = st.selectbox(
                     "Visual Type",
                     options=options_list,
@@ -1398,7 +1947,7 @@ def phase_review(config: Dict[str, Any]) -> None:
                     f'<div style="font-size:0.72rem;color:#4A90D9;font-weight:700;'
                     f'text-transform:uppercase;margin-bottom:4px;">Key Insight</div>'
                     f'<div style="color:#C8D6E5;font-size:0.85rem;">{content.key_insight}</div>'
-                    f'</div>',
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
 
@@ -1467,19 +2016,19 @@ def phase_review(config: Dict[str, Any]) -> None:
                             use_container_width=True,
                         )
                     else:
-                        st.info("No infographic image generated yet. Use the button below to generate one.")
+                        st.info(
+                            "No infographic image generated yet. Use the button below to generate one."
+                        )
 
                     # Use existing proposal prompt or generate default
                     default_prompt = (
                         current_proposal.generated_prompt
                         if current_proposal and current_proposal.generated_prompt
                         else f"Professional infographic about {content.title}: {content.key_insight}. "
-                             f"Clean modern design, 16:9 widescreen format."
+                        f"Clean modern design, 16:9 widescreen format."
                     )
                     default_placement = (
-                        current_proposal.placement
-                        if current_proposal
-                        else "full-slide"
+                        current_proposal.placement if current_proposal else "full-slide"
                     )
 
                     edited_prompt = st.text_area(
@@ -1494,11 +2043,17 @@ def phase_review(config: Dict[str, Any]) -> None:
                     new_placement = st.selectbox(
                         "Placement",
                         placement_options,
-                        index=placement_options.index(default_placement) if default_placement in placement_options else 0,
+                        index=placement_options.index(default_placement)
+                        if default_placement in placement_options
+                        else 0,
                         key=f"infographic_placement_{idx}",
                     )
 
-                    btn_label = "🔄 Regenerate Infographic" if getattr(content, "infographic_image", None) else "🎨 Generate Infographic"
+                    btn_label = (
+                        "🔄 Regenerate Infographic"
+                        if getattr(content, "infographic_image", None)
+                        else "🎨 Generate Infographic"
+                    )
                     if st.button(
                         btn_label,
                         key=f"regen_infographic_{idx}",
@@ -1508,6 +2063,7 @@ def phase_review(config: Dict[str, Any]) -> None:
                         # Create proposal on the fly if none exists
                         if not current_proposal:
                             from models import InfographicProposal
+
                             current_proposal = InfographicProposal(
                                 slide_number=slide.id,
                                 slide_title=content.title,
@@ -1533,7 +2089,9 @@ def phase_review(config: Dict[str, Any]) -> None:
                             st.session_state.slide_previews = None
                             st.rerun()
                         else:
-                            st.error("Failed to generate infographic. Check API and try again.")
+                            st.error(
+                                "Failed to generate infographic. Check API and try again."
+                            )
 
     # ── Action buttons ──
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1573,11 +2131,22 @@ def phase_review(config: Dict[str, Any]) -> None:
 
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
-        btn_label = f"✅  Generate PPTX ({approved_count} slides)" if has_approved else "✅  Approve All & Generate"
-        if st.button(btn_label, type="primary", width="stretch", disabled=(not has_approved and not all_reviewed)):
+        btn_label = (
+            f"✅  Generate PPTX ({approved_count} slides)"
+            if has_approved
+            else "✅  Approve All & Generate"
+        )
+        if st.button(
+            btn_label,
+            type="primary",
+            width="stretch",
+            disabled=(not has_approved and not all_reviewed),
+        ):
             if not has_approved:
                 # Approve all if none reviewed yet
-                st.session_state.slide_approvals = {i: "approved" for i in range(total_slides)}
+                st.session_state.slide_approvals = {
+                    i: "approved" for i in range(total_slides)
+                }
             st.session_state.pipeline_phase = "finalizing"
             st.rerun()
     with col2:
@@ -1592,7 +2161,9 @@ def phase_review(config: Dict[str, Any]) -> None:
             st.rerun()
     with col3:
         if st.button("✅ All", width="stretch", help="Approve all slides at once"):
-            st.session_state.slide_approvals = {i: "approved" for i in range(total_slides)}
+            st.session_state.slide_approvals = {
+                i: "approved" for i in range(total_slides)
+            }
             st.rerun()
 
 
@@ -1607,7 +2178,10 @@ def _find_next_pending(current: int, total: int, approvals: dict) -> int:
 
 def phase_finalizing(config: Dict[str, Any]) -> None:
     """Final PPTX generation phase."""
-    st.markdown('<p class="phase-title">Phase 7 — Building Presentation</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="phase-title">Phase 7 — Building Presentation</p>',
+        unsafe_allow_html=True,
+    )
     render_progress_bar("finalizing")
 
     orchestrator = get_orchestrator()
@@ -1626,9 +2200,9 @@ def phase_finalizing(config: Dict[str, Any]) -> None:
         '<div class="loading-steps">'
         '<div class="loading-step active"><span class="loading-step-icon">📊</span> Rendering charts, tables, and infographics</div>'
         '<div class="loading-step active"><span class="loading-step-icon">📦</span> Packaging into PowerPoint file</div>'
-        '</div>'
+        "</div>"
         f'<div class="fact-box"><strong>📈 Did you know?</strong> {get_random_fact()}</div>'
-        '</div>',
+        "</div>",
         unsafe_allow_html=True,
     )
 
@@ -1644,9 +2218,142 @@ def phase_finalizing(config: Dict[str, Any]) -> None:
         st.rerun()
 
 
+def phase_present_slide(config: Dict[str, Any]) -> None:
+    """Presentation Mode: Full-screen immersive slideshow."""
+    
+    # ── Immersive CSS ──
+    st.markdown(
+        """
+        <style>
+            /* Hide Streamlit UI elements */
+            [data-testid="stSidebar"] {display: none;}
+            [data-testid="stHeader"] {display: none;}
+            footer {display: none;}
+            
+            /* Maximize content area */
+            .main .block-container {
+                padding-top: 1rem !important;
+                padding-bottom: 1rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
+                max-width: 100% !important;
+            }
+            
+            /* Black background for immersive feel */
+            .stApp {
+                background-color: #0E1117;
+            }
+            
+            /* Custom button styling for presentation controls */
+            div.stButton > button {
+                background-color: rgba(255, 255, 255, 0.1);
+                color: #FAFAFA;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+            div.stButton > button:hover {
+                background-color: rgba(255, 255, 255, 0.2);
+                border-color: rgba(255, 255, 255, 0.5);
+                color: #FFFFFF;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    contents = st.session_state.slide_contents
+    outline = st.session_state.selected_outline
+    selected_theme = st.session_state.selected_theme
+
+    if not contents or not outline:
+        st.session_state.pipeline_phase = "done"
+        st.rerun()
+        return
+
+    # Use session state for current slide index
+    if "present_idx" not in st.session_state:
+        st.session_state.present_idx = 0
+    
+    idx = st.session_state.present_idx
+    total = len(contents)
+    
+    # ── Render Slide Image ──
+    # We render first to have it ready, but display it in the middle
+    from generators.slide_previewer import SlidePreviewRenderer
+    renderer = SlidePreviewRenderer(theme=selected_theme)
+    image_bytes = renderer.render_slide(outline.slides[idx], contents[idx])
+    
+    # ── Top Navigation Bar ──
+    # [ Slide X/Y ] [ Prev ] [ Next ] [ Exit ]
+    
+    col_info, col_prev, col_next, col_exit = st.columns([4, 1, 1, 1])
+    
+    with col_info:
+        st.markdown(
+            f"<div style='font-size:1.2rem; color:#DDD; font-weight:600; padding-top:5px;'>"
+            f"Slide {idx + 1} / {total} — <span style='color:#AAA; font-weight:400;'>{contents[idx].title}</span>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+    with col_prev:
+        if st.button("⬅ Previous", key="pres_prev", disabled=(idx == 0), use_container_width=True):
+            st.session_state.present_idx = max(0, idx - 1)
+            st.rerun()
+            
+    with col_next:
+        if st.button("Next ➡", key="pres_next", disabled=(idx == total - 1), use_container_width=True):
+            st.session_state.present_idx = min(total - 1, idx + 1)
+            st.rerun()
+            
+    with col_exit:
+        if st.button("❌ Exit", key="pres_exit", type="primary", use_container_width=True):
+            st.session_state.pipeline_phase = "done"
+            st.rerun()
+
+    # ── Main Slide Display ──
+    # Full width image
+    st.image(image_bytes, use_container_width=True)
+    
+    # ── Fullscreen Toggle Script ──
+    # This renders a hidden component that executes JS to request fullscreen on load if not already.
+    # Note: Browsers block auto-fullscreen without user interaction.
+    # So we provide a manual button below the image as a fallback/primary method.
+    
+    st.markdown(
+        """
+        <script>
+        function toggleFullScreen() {
+            var doc = window.parent.document;
+            if (!doc.fullscreenElement) {
+                doc.documentElement.requestFullscreen();
+            } else {
+                if (doc.exitFullscreen) {
+                    doc.exitFullscreen();
+                }
+            }
+        }
+        </script>
+        """, 
+        unsafe_allow_html=True
+    )
+    
+    # Centered "Enter Fullscreen" button (optional helper), using Streamlit component for JS trigger is hard.
+    # We'll stick to making the viewport "feel" fullscreen via CSS above.
+    # The user can press F11 for browser fullscreen.
+    
+    st.markdown(
+        "<div style='text-align:center; color:#555; font-size:0.8rem; margin-top:10px;'>"
+        "Tip: Press <strong>F11</strong> for browser fullscreen experience."
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+
 def phase_done(config: Dict[str, Any]) -> None:
-    """Done: show download and summary."""
-    st.markdown('<p class="phase-title">Presentation Complete</p>', unsafe_allow_html=True)
+    """Done: show download, email, and present options."""
+    st.markdown(
+        '<p class="phase-title">Presentation Complete</p>', unsafe_allow_html=True
+    )
     render_progress_bar("done")
 
     output_path = st.session_state.output_path
@@ -1655,31 +2362,74 @@ def phase_done(config: Dict[str, Any]) -> None:
             f'<div class="glass-card" style="text-align:center;padding:2rem;">'
             f'<div style="font-size:1.5rem;margin-bottom:0.5rem;">🎉</div>'
             f'<div style="color:#C8D6E5;font-size:1.05rem;font-weight:600;">'
-            f'Your presentation is ready</div>'
+            f"Your presentation is ready</div>"
             f'<div style="color:#5A7A9A;font-size:0.85rem;margin-top:4px;">'
-            f'{Path(output_path).name}</div></div>',
+            f"{Path(output_path).name}</div></div>",
             unsafe_allow_html=True,
         )
 
-        with open(output_path, "rb") as f:
-            st.download_button(
-                label="📥  Download Presentation",
-                data=f.read(),
-                file_name=Path(output_path).name,
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                type="primary",
-                width="stretch",
-            )
+        col_dl, col_mail, col_pres = st.columns(3)
+        
+        with col_dl:
+            with open(output_path, "rb") as f:
+                st.download_button(
+                    label="📥  Download PPTX",
+                    data=f.read(),
+                    file_name=Path(output_path).name,
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    type="primary",
+                    use_container_width=True,
+                )
+
+        with col_pres:
+            if st.button("📺 Present Online", width="stretch"):
+                st.session_state.pipeline_phase = "present"
+                st.rerun()
+
+        st.markdown("### 📧 Email Presentation")
+        with st.expander("Send Copy via Email", expanded=False):
+            email_to = st.text_input("Recipient Email")
+            email_subject = st.text_input("Subject", value=f"Presentation: {Path(output_path).name}")
+            
+            # Use environment variables for sender or ask user (user asked for features, we can assume env or basic input)
+            # For this demo, let's ask for sender creds simply or try generic.
+            # Best practice: use app config.
+            
+            st.caption("Requires SMTP credentials (e.g. Gmail App Password)")
+            col_cr1, col_cr2 = st.columns(2)
+            with col_cr1:
+                email_user = st.text_input("Your Email", value=os.environ.get("SMTP_EMAIL", ""))
+            with col_cr2:
+                email_pass = st.text_input("App Password", type="password", value=os.environ.get("SMTP_PASSWORD", ""))
+            
+            if st.button("Send Email 📤", disabled=not (email_to and email_user and email_pass)):
+                from utils.email_sender import send_email_with_attachment
+                with st.spinner("Sending email..."):
+                    success = send_email_with_attachment(
+                        to_email=email_to,
+                        subject=email_subject,
+                        body="Please find the attached presentation.",
+                        attachment_path=output_path,
+                        sender_email=email_user,
+                        sender_password=email_pass
+                    )
+                    if success:
+                        st.success("Email sent successfully!")
+                    else:
+                        st.error("Failed to send email. Check credentials.")
 
         # Summary stats
         outline = st.session_state.selected_outline
         if outline:
             findings = st.session_state.research_findings or []
             charts_tables = sum(
-                1 for c in (st.session_state.slide_contents or [])
+                1
+                for c in (st.session_state.slide_contents or [])
                 if c.chart_data or c.table_data
             )
-            source_count = sum(len(f.sources) for f in findings)
+            source_count = 0
+            if findings:
+                source_count = sum(len(f.sources) for f in findings)
 
             cols = st.columns(4)
             metrics = [
@@ -1715,9 +2465,9 @@ def phase_error(config: Dict[str, Any]) -> None:
         '<div class="glass-card">'
         '<div style="color:#C8D6E5;font-weight:600;margin-bottom:0.5rem;">Possible causes:</div>'
         '<div style="color:#7B9DBF;font-size:0.9rem;">'
-        '• Invalid or missing <code>GEMINI_API_KEY</code> in <code>.env</code><br>'
-        '• API rate limiting (wait a moment and retry)<br>'
-        '• Network connectivity issues</div></div>',
+        "• Invalid or missing <code>GEMINI_API_KEY</code> in <code>.env</code><br>"
+        "• API rate limiting (wait a moment and retry)<br>"
+        "• Network connectivity issues</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -1752,16 +2502,18 @@ def main() -> None:
         "researching": phase_researching,
         "framework_selection": phase_framework_selection,
         "storyline_approval": phase_storyline_approval,
+        "theme_selection": phase_theme_selection,
         "generating": phase_generating,
-        "layout_selection": phase_layout_selection,
         "review": phase_review,
         "finalizing": phase_finalizing,
         "done": phase_done,
+        "present": phase_present_slide,
         "error": phase_error,
     }
 
     handler = phases.get(phase, phase_idle)
     handler(config)
+
 
 
 if __name__ == "__main__":

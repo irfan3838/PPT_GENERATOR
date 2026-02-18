@@ -47,12 +47,16 @@ class SlideRenderDecider:
         total_slides: int,
     ) -> str:
         """Build a detailed image generation prompt for nano banana pro."""
-        bullets_text = "\n".join(f"- {b}" for b in content.content_bullets)
+        max_bullets = 5
+        bullets_to_show = content.content_bullets[:max_bullets]
+        bullets_text = "\n".join(f"- {b}" for b in bullets_to_show)
         return IMAGE_SLIDE_PROMPT_TEMPLATE.format(
             slide_title=content.title,
             content_bullets=bullets_text,
             key_insight=content.key_insight or "N/A",
-            speaker_notes=content.speaker_notes[:500] if content.speaker_notes else "N/A",
+            speaker_notes=content.speaker_notes[:500]
+            if content.speaker_notes
+            else "N/A",
             primary_color=theme.primary_hex,
             accent_color=theme.accent_hex,
             bg_color=theme.bg_white_hex,
@@ -88,7 +92,9 @@ class SlideRenderDecider:
         # ── Rule 2: text_heavy_infographic → ALWAYS image_generation ──
         # This is the explicit user signal: "I want this slide as a nano banana infographic"
         if slide.visual_type == "text_heavy_infographic":
-            image_prompt = self._build_image_prompt(content, theme, slide_num, total_slides)
+            image_prompt = self._build_image_prompt(
+                content, theme, slide_num, total_slides
+            )
             self._log.info(
                 f"Slide {slide.id}: render_mode=image_generation "
                 f"(text_heavy_infographic → nano banana pro)"
@@ -104,8 +110,7 @@ class SlideRenderDecider:
         # ── Rule 3: Slides with chart/table data → standard ──
         if content.chart_data or content.table_data:
             self._log.info(
-                f"Slide {slide.id}: render_mode=standard "
-                f"(has chart/table data)"
+                f"Slide {slide.id}: render_mode=standard (has chart/table data)"
             )
             return RenderDecision(
                 slide_id=slide.id,
@@ -117,7 +122,9 @@ class SlideRenderDecider:
         # ── Rule 4: Bullet/split slides without data → image_generation ──
         # These are text-heavy qualitative slides that benefit from AI-generated visuals
         if slide.layout_type in ("bullet", "split"):
-            image_prompt = self._build_image_prompt(content, theme, slide_num, total_slides)
+            image_prompt = self._build_image_prompt(
+                content, theme, slide_num, total_slides
+            )
             self._log.info(
                 f"Slide {slide.id}: render_mode=image_generation "
                 f"(text-heavy {slide.layout_type} → AI infographic)"
@@ -160,10 +167,7 @@ class SlideRenderDecider:
             return idx, decision
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(_decide_one, i): i
-                for i in range(total)
-            }
+            futures = {executor.submit(_decide_one, i): i for i in range(total)}
             for future in as_completed(futures):
                 try:
                     idx, decision = future.result()
@@ -180,5 +184,7 @@ class SlideRenderDecider:
 
         final = [d for d in decisions if d is not None]
         image_count = sum(1 for d in final if d.render_mode == "image_generation")
-        self._log.info(f"Decisions: {image_count} image_generation, {len(final) - image_count} standard")
+        self._log.info(
+            f"Decisions: {image_count} image_generation, {len(final) - image_count} standard"
+        )
         return final

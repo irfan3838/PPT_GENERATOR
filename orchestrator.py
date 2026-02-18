@@ -63,15 +63,21 @@ class PipelineOrchestrator:
         # Initialize all agents with shared LLM
         self._research_agent = ResearchAgent(llm=self._llm, settings=self._settings)
         self._deep_research = DeepResearchAgent(llm=self._llm, settings=self._settings)
-        self._framework_selector = FrameworkSelectorAgent(llm=self._llm, settings=self._settings)
+        self._framework_selector = FrameworkSelectorAgent(
+            llm=self._llm, settings=self._settings
+        )
         self._storyline_agent = StorylineAgent(llm=self._llm, settings=self._settings)
-        self._comparative_gen = ComparativeStorylineGenerator(llm=self._llm, settings=self._settings)
+        self._comparative_gen = ComparativeStorylineGenerator(
+            llm=self._llm, settings=self._settings
+        )
         self._layout_decider = LayoutDecider(llm=self._llm, settings=self._settings)
         self._content_agent = SlideContentAgent(llm=self._llm, settings=self._settings)
         self._critic = CriticAgent(llm=self._llm, settings=self._settings)
         self._infographic = InfographicAgent(llm=self._llm, settings=self._settings)
         self._layout_critic = LayoutCriticAgent(llm=self._llm, settings=self._settings)
-        self._render_decider = SlideRenderDecider(llm=self._llm, settings=self._settings)
+        self._render_decider = SlideRenderDecider(
+            llm=self._llm, settings=self._settings
+        )
         self._imagen = NanoBananaProIntegration(settings=self._settings)
         self._ppt_gen = InteractivePPTGenerator()
         self._selected_theme: PresentationTheme = THEME_CORPORATE_BLUE
@@ -279,19 +285,23 @@ class PipelineOrchestrator:
             # Step 2: Layout confirmation (parallel)
             self._set_status("generating", "Confirming slide layouts")
             from concurrent.futures import ThreadPoolExecutor, as_completed
+
             def _decide_layout(s):
                 return self._layout_decider.decide(
                     slide=s,
                     available_data=self._research_map.get(s.id, ""),
                 )
+
             with ThreadPoolExecutor(max_workers=3) as executor:
                 list(executor.map(_decide_layout, slides))
 
             # Step 3: Content generation
             self._set_status("generating", "Generating slide content")
+            theme_desc = self._selected_theme.description if self._selected_theme else "Corporate Blue"
             self._slide_contents = self._content_agent.generate_all(
                 slides=slides,
                 research_map=self._research_map,
+                theme_description=theme_desc,
             )
 
             return self._slide_contents
@@ -318,8 +328,12 @@ class PipelineOrchestrator:
                     "title": content.title,
                     "content_bullets": content.content_bullets,
                     "key_insight": content.key_insight,
-                    "chart_data": content.chart_data.model_dump() if content.chart_data else None,
-                    "table_data": content.table_data.model_dump() if content.table_data else None,
+                    "chart_data": content.chart_data.model_dump()
+                    if content.chart_data
+                    else None,
+                    "table_data": content.table_data.model_dump()
+                    if content.table_data
+                    else None,
                 }
                 for i, content in enumerate(self._slide_contents)
             ]
@@ -330,8 +344,7 @@ class PipelineOrchestrator:
             )
 
             has_critical = any(
-                any(issue.severity == "critical" for issue in r.issues)
-                for r in results
+                any(issue.severity == "critical" for issue in r.issues) for r in results
             )
 
             self._log.info(
@@ -366,13 +379,19 @@ class PipelineOrchestrator:
                     "title": content.title,
                     "layout_type": self.state.selected_outline.slides[i].layout_type,
                     "content_bullets": content.content_bullets,
-                    "chart_data": content.chart_data.model_dump() if content.chart_data else None,
-                    "table_data": content.table_data.model_dump() if content.table_data else None,
+                    "chart_data": content.chart_data.model_dump()
+                    if content.chart_data
+                    else None,
+                    "table_data": content.table_data.model_dump()
+                    if content.table_data
+                    else None,
                 }
                 for i, content in enumerate(self._slide_contents)
             ]
 
-            self._infographic_proposals = self._infographic.evaluate_all_slides(slides_data)
+            self._infographic_proposals = self._infographic.evaluate_all_slides(
+                slides_data
+            )
             return self._infographic_proposals
 
         except Exception as e:
@@ -428,6 +447,7 @@ class PipelineOrchestrator:
                 image_buf = self._imagen.generate_visual(
                     prompt=proposal.generated_prompt,
                     placement=proposal.placement,
+                    theme=self._selected_theme,
                 )
                 if image_buf:
                     content.infographic_image = image_buf.read()
@@ -444,7 +464,9 @@ class PipelineOrchestrator:
         # Also generate infographics for text_heavy_infographic slides
         if self.state.selected_outline:
             for i, slide in enumerate(self.state.selected_outline.slides):
-                if slide.visual_type == "text_heavy_infographic" and i < len(self._slide_contents):
+                if slide.visual_type == "text_heavy_infographic" and i < len(
+                    self._slide_contents
+                ):
                     content = self._slide_contents[i]
                     if content.infographic_image:
                         continue  # Already has an image
@@ -458,6 +480,7 @@ class PipelineOrchestrator:
                         image_buf = self._imagen.generate_visual(
                             prompt=prompt,
                             placement="full-slide",
+                            theme=self._selected_theme,
                         )
                         if image_buf:
                             content.infographic_image = image_buf.read()
@@ -496,8 +519,7 @@ class PipelineOrchestrator:
             )
 
             image_count = sum(
-                1 for d in self._render_decisions
-                if d.render_mode == "image_generation"
+                1 for d in self._render_decisions if d.render_mode == "image_generation"
             )
             self._log.info(
                 f"Render decisions: {image_count} image slides, "
@@ -522,15 +544,20 @@ class PipelineOrchestrator:
             return 0
 
         if not self._imagen.is_available:
-            self._log.warning("Image generation not available, skipping full-slide images")
+            self._log.warning(
+                "Image generation not available, skipping full-slide images"
+            )
             return 0
 
-        self._set_status("generating", "Generating full-slide images for text-heavy slides")
+        self._set_status(
+            "generating", "Generating full-slide images for text-heavy slides"
+        )
 
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         image_decisions = [
-            d for d in self._render_decisions
+            d
+            for d in self._render_decisions
             if d.render_mode == "image_generation" and d.image_prompt
         ]
 
@@ -555,6 +582,7 @@ class PipelineOrchestrator:
                     result = self._imagen.generate_visual(
                         prompt=decision.image_prompt,
                         placement="full-slide",
+                        theme=self._selected_theme,
                     )
                     if result is None:
                         self._log.warning(
@@ -564,10 +592,7 @@ class PipelineOrchestrator:
             return -1, None
 
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {
-                executor.submit(_generate_one, d): d
-                for d in image_decisions
-            }
+            futures = {executor.submit(_generate_one, d): d for d in image_decisions}
             for future in as_completed(futures):
                 decision = futures[future]
                 try:
@@ -674,15 +699,16 @@ class PipelineOrchestrator:
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
-                executor.submit(_refine_one, i, s, c): (i, s)
-                for i, s, c in to_refine
+                executor.submit(_refine_one, i, s, c): (i, s) for i, s, c in to_refine
             }
             for future in as_completed(futures):
                 idx, slide = futures[future]
                 try:
                     result_idx, image_buf = future.result()
                     if image_buf and result_idx < len(self._slide_contents):
-                        self._slide_contents[result_idx].full_slide_image = image_buf.read()
+                        self._slide_contents[
+                            result_idx
+                        ].full_slide_image = image_buf.read()
                         refined += 1
                         self._log.info(
                             f"Slide {slide.id} refined "
@@ -693,13 +719,9 @@ class PipelineOrchestrator:
                             f"Slide {slide.id}: refinement returned None, keeping original"
                         )
                 except Exception as e:
-                    self._log.warning(
-                        f"Refinement failed for slide {slide.id}: {e}"
-                    )
+                    self._log.warning(f"Refinement failed for slide {slide.id}: {e}")
 
-        self._log.info(
-            f"Universal refinement: {refined}/{len(to_refine)} succeeded"
-        )
+        self._log.info(f"Universal refinement: {refined}/{len(to_refine)} succeeded")
         return refined
 
     def regenerate_single_slide(
@@ -725,7 +747,9 @@ class PipelineOrchestrator:
 
         slide = self.state.selected_outline.slides[slide_index]
         old_content = self._slide_contents[slide_index]
-        research_data = self._research_map.get(slide.id, self._research_synthesis[:2000])
+        research_data = self._research_map.get(
+            slide.id, self._research_synthesis[:2000]
+        )
 
         if custom_prompt:
             research_data += f"\n\n**USER INSTRUCTIONS:** {custom_prompt}"
@@ -767,6 +791,7 @@ class PipelineOrchestrator:
         image_buf = self._imagen.generate_visual(
             prompt=new_prompt,
             placement=placement,
+            theme=self._selected_theme,
         )
         if image_buf:
             image_bytes = image_buf.read()
