@@ -17,6 +17,7 @@ import matplotlib.ticker as mticker
 from config import get_settings
 from engine.pipeline_logger import PipelineLogger
 from models import ChartData
+from utils.gcp_storage import get_storage_manager
 
 if TYPE_CHECKING:
     from generators.themes import PresentationTheme
@@ -135,6 +136,17 @@ class ChartAnnotator:
                     facecolor=bg, edgecolor="none")
         plt.close(fig)
         buf.seek(0)
+
+        # Upload to GCS if configured
+        try:
+            storage = get_storage_manager()
+            if storage.enabled:
+                filename = storage.generate_unique_filename("images/charts", ".png")
+                storage.upload_file(buf, filename, content_type="image/png")
+                # Reset buffer for caller
+                buf.seek(0)
+        except Exception as e:
+            self._log.warning(f"Failed to upload chart to GCS: {e}")
 
         self._log.info(f"Chart generated: {buf.getbuffer().nbytes / 1024:.1f} KB")
         return buf

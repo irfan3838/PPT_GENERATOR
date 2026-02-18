@@ -80,6 +80,20 @@ class Settings(BaseSettings):
         description="API key for Nano Banana Pro (optional enhanced visuals)",
     )
 
+    # --- Google Cloud Storage ---
+    gcp_project_id: Optional[str] = Field(
+        default=None,
+        description="GCP Project ID for storage bucket",
+    )
+    gcp_bucket_name: Optional[str] = Field(
+        default=None,
+        description="GCP Storage Bucket Name to save artifacts",
+    )
+    gcp_credentials_json: Optional[str] = Field(
+        default=None,
+        description="Path to GCP Service Account JSON key (optional)",
+    )
+
     model_config = {
         "env_file": str(ROOT_DIR / ".env"),
         "env_file_encoding": "utf-8",

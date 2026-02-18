@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 from typing import TYPE_CHECKING, Optional
+from utils.gcp_storage import get_storage_manager
 
 from google import genai
 from google.genai import types
@@ -179,6 +180,17 @@ class NanoBananaProIntegration:
             buf = io.BytesIO(image_bytes)
             buf.seek(0)
             self._log.info(f"Infographic generated: {len(image_bytes) / 1024:.1f} KB")
+
+            # Upload to GCS if configured (fire and forget basically, just store it)
+            try:
+                storage = get_storage_manager()
+                if storage.enabled:
+                    # We need a fresh copy of bytes or just use image_bytes
+                    filename = storage.generate_unique_filename("images/infographics", ".png")
+                    storage.upload_file(image_bytes, filename, content_type="image/png")
+            except Exception as e:
+                self._log.warning(f"Failed to upload infographic to GCS: {e}")
+
             return buf
         except Exception as e:
             self._log.warning(f"Gemini image generation failed: {e}")
@@ -219,6 +231,16 @@ class NanoBananaProIntegration:
             buf = io.BytesIO(refined_bytes)
             buf.seek(0)
             self._log.info(f"Slide refined: {len(refined_bytes) / 1024:.1f} KB")
+
+            # Upload to GCS if configured
+            try:
+                storage = get_storage_manager()
+                if storage.enabled:
+                    filename = storage.generate_unique_filename("images/refined_slides", ".png")
+                    storage.upload_file(refined_bytes, filename, content_type="image/png")
+            except Exception as e:
+                self._log.warning(f"Failed to upload refined slide to GCS: {e}")
+
             return buf
         except Exception as e:
             self._log.warning(f"Gemini slide refinement failed: {e}")

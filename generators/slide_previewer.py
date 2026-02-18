@@ -22,6 +22,7 @@ from agents.slide_content_agent import SlideContent
 from generators.chart_annotator import ChartAnnotator
 from generators.themes import PresentationTheme, THEME_CORPORATE_BLUE
 from models import SlidePlan
+from utils.gcp_storage import get_storage_manager
 
 
 # Slide dimensions (13.333 x 7.5 aspect = 16:9)
@@ -51,23 +52,34 @@ class SlidePreviewRenderer:
         """Render a single slide to a PNG image (bytes)."""
         # Full-slide image takes priority (already a PNG from Render Deciding Agent)
         if getattr(content, "full_slide_image", None):
-            return content.full_slide_image
+            res_bytes = content.full_slide_image
+        else:
+            layout_type = plan.layout_type.lower()
+            dispatch = {
+                "title": self._render_title,
+                "bullet": self._render_bullet,
+                "chart": self._render_chart,
+                "table": self._render_table,
+                "split": self._render_split,
+                "exec_summary": self._render_exec_summary,
+                "section_divider": self._render_section_divider,
+                "closing": self._render_closing,
+            }
+            renderer = dispatch.get(layout_type, self._render_bullet)
+            res_bytes = renderer(plan, content)
 
-        layout_type = plan.layout_type.lower()
+        # Upload to GCS if configured
+        try:
+            storage = get_storage_manager()
+            if storage.enabled:
+                filename = storage.generate_unique_filename("images/previews", ".png")
+                storage.upload_file(res_bytes, filename, content_type="image/png")
+        except Exception as e:
+            # Non-blocking, just log if failing is acceptable? 
+            # We don't have logger here easily unless passed. 
+            pass
 
-        dispatch = {
-            "title": self._render_title,
-            "bullet": self._render_bullet,
-            "chart": self._render_chart,
-            "table": self._render_table,
-            "split": self._render_split,
-            "exec_summary": self._render_exec_summary,
-            "section_divider": self._render_section_divider,
-            "closing": self._render_closing,
-        }
-
-        renderer = dispatch.get(layout_type, self._render_bullet)
-        return renderer(plan, content)
+        return res_bytes
 
     def render_all(
         self,
