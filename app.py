@@ -10,7 +10,7 @@ import os
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -700,6 +700,7 @@ def init_session_state() -> None:
         "slide_contents": None,
         "validation_results": None,
         "output_path": None,
+        "output_gcs_uri": None,
         "error_message": None,
         "status_log": [],
         "slide_previews": None,
@@ -2209,6 +2210,7 @@ def phase_finalizing(config: Dict[str, Any]) -> None:
     try:
         output_path = orchestrator.run_pptx_generation()
         st.session_state.output_path = output_path
+        st.session_state.output_gcs_uri = orchestrator.state.output_gcs_uri
         st.session_state.pipeline_phase = "done"
         st.rerun()
 
@@ -2216,6 +2218,39 @@ def phase_finalizing(config: Dict[str, Any]) -> None:
         st.session_state.error_message = str(e)
         st.session_state.pipeline_phase = "error"
         st.rerun()
+
+
+def _get_pptx_bytes() -> Optional[Tuple[bytes, str]]:
+    """Get PPTX file bytes and filename. Tries local file first, falls back to GCS.
+
+    Returns:
+        Tuple of (file_bytes, filename) or None if unavailable.
+    """
+    output_path = st.session_state.get("output_path")
+    gcs_uri = st.session_state.get("output_gcs_uri")
+
+    # Try local file first
+    if output_path and Path(output_path).exists():
+        with open(output_path, "rb") as f:
+            return f.read(), Path(output_path).name
+
+    # Fall back to GCS
+    if gcs_uri:
+        from utils.gcp_storage import get_storage_manager
+        storage = get_storage_manager()
+        if storage.enabled:
+            # Parse gs://bucket-name/path/to/blob
+            parts = gcs_uri.split("/", 3)
+            if len(parts) == 4:
+                blob_name = parts[3]
+            else:
+                blob_name = gcs_uri
+            data = storage.download_file(blob_name)
+            if data:
+                filename = Path(blob_name).name if output_path is None else Path(output_path).name
+                return data, filename
+
+    return None
 
 
 def phase_present_slide(config: Dict[str, Any]) -> None:
@@ -2276,11 +2311,22 @@ def phase_present_slide(config: Dict[str, Any]) -> None:
     idx = st.session_state.present_idx
     total = len(contents)
     
-    # ── Render Slide Image ──
-    # We render first to have it ready, but display it in the middle
-    from generators.slide_previewer import SlidePreviewRenderer
-    renderer = SlidePreviewRenderer(theme=selected_theme)
-    image_bytes = renderer.render_slide(outline.slides[idx], contents[idx])
+    # ── Render Slide Image (use cached previews from review phase) ──
+    previews = st.session_state.get("slide_previews") or []
+    if previews and idx < len(previews) and previews[idx]:
+        image_bytes = previews[idx]
+    else:
+        # Fallback: render on demand and cache for subsequent navigation
+        from generators.slide_previewer import SlidePreviewRenderer
+        renderer = SlidePreviewRenderer(theme=selected_theme)
+        renderer._total_slides = total
+        renderer._topic = st.session_state.get("topic", "")
+        image_bytes = renderer.render_slide(outline.slides[idx], contents[idx])
+        # Cache in session state to avoid re-rendering on navigation
+        if not previews:
+            previews = [None] * total
+            st.session_state.slide_previews = previews
+        previews[idx] = image_bytes
     
     # ── Top Navigation Bar ──
     # [ Slide X/Y ] [ Prev ] [ Next ] [ Exit ]
@@ -2356,30 +2402,32 @@ def phase_done(config: Dict[str, Any]) -> None:
     )
     render_progress_bar("done")
 
+    pptx_result = _get_pptx_bytes()
     output_path = st.session_state.output_path
-    if output_path and Path(output_path).exists():
+
+    if pptx_result:
+        pptx_bytes, pptx_filename = pptx_result
         st.markdown(
             f'<div class="glass-card" style="text-align:center;padding:2rem;">'
             f'<div style="font-size:1.5rem;margin-bottom:0.5rem;">🎉</div>'
             f'<div style="color:#C8D6E5;font-size:1.05rem;font-weight:600;">'
             f"Your presentation is ready</div>"
             f'<div style="color:#5A7A9A;font-size:0.85rem;margin-top:4px;">'
-            f"{Path(output_path).name}</div></div>",
+            f"{pptx_filename}</div></div>",
             unsafe_allow_html=True,
         )
 
         col_dl, col_mail, col_pres = st.columns(3)
-        
+
         with col_dl:
-            with open(output_path, "rb") as f:
-                st.download_button(
-                    label="📥  Download PPTX",
-                    data=f.read(),
-                    file_name=Path(output_path).name,
-                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    type="primary",
-                    use_container_width=True,
-                )
+            st.download_button(
+                label="📥  Download PPTX",
+                data=pptx_bytes,
+                file_name=pptx_filename,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                type="primary",
+                use_container_width=True,
+            )
 
         with col_pres:
             if st.button("📺 Present Online", width="stretch"):
@@ -2389,29 +2437,26 @@ def phase_done(config: Dict[str, Any]) -> None:
         st.markdown("### 📧 Email Presentation")
         with st.expander("Send Copy via Email", expanded=False):
             email_to = st.text_input("Recipient Email")
-            email_subject = st.text_input("Subject", value=f"Presentation: {Path(output_path).name}")
-            
-            # Use environment variables for sender or ask user (user asked for features, we can assume env or basic input)
-            # For this demo, let's ask for sender creds simply or try generic.
-            # Best practice: use app config.
-            
+            email_subject = st.text_input("Subject", value=f"Presentation: {pptx_filename}")
+
             st.caption("Requires SMTP credentials (e.g. Gmail App Password)")
             col_cr1, col_cr2 = st.columns(2)
             with col_cr1:
                 email_user = st.text_input("Your Email", value=os.environ.get("SMTP_EMAIL", ""))
             with col_cr2:
                 email_pass = st.text_input("App Password", type="password", value=os.environ.get("SMTP_PASSWORD", ""))
-            
+
             if st.button("Send Email 📤", disabled=not (email_to and email_user and email_pass)):
-                from utils.email_sender import send_email_with_attachment
+                from utils.email_sender import send_email_with_attachment, send_email_with_attachment_bytes
                 with st.spinner("Sending email..."):
-                    success = send_email_with_attachment(
+                    success = send_email_with_attachment_bytes(
                         to_email=email_to,
                         subject=email_subject,
                         body="Please find the attached presentation.",
-                        attachment_path=output_path,
+                        attachment_bytes=pptx_bytes,
+                        filename=pptx_filename,
                         sender_email=email_user,
-                        sender_password=email_pass
+                        sender_password=email_pass,
                     )
                     if success:
                         st.success("Email sent successfully!")
